@@ -1,3 +1,9 @@
+> **STALE — pre-V2 foundation draft.** Do not implement directly.
+> Conflicts with V2 foundation: references `quoteApprovedAt`/`quoteRejectedAt` fields
+> absent from the schema; bypasses `isValidStatusTransition()`; defines client details
+> schema locally instead of importing from `@/domain/orders/client-details.ts`.
+> Reconcile against `prisma/schema.prisma` and `src/domain/` before using as a plan input.
+
 ## 📁 The Directory Structure
 
 Instead of scattering logic across `src/app/api/orders/...` and `src/lib/validations/...`, everything related to approving a quote lives right next to the UI that triggers it:

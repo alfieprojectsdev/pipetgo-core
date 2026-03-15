@@ -1,3 +1,10 @@
+> **STALE — pre-V2 foundation draft.** Do not implement directly.
+> Conflicts with V2 foundation: `handlers.ts` transitions order to `'PENDING'` after
+> payment capture (the dual-semantics bug fixed in V2 — correct target is `ACKNOWLEDGED`
+> via `isValidStatusTransition()`); `events.ts` is a raw PayMongo payload type, not the
+> domain event interfaces in `src/domain/payments/events.ts`.
+> Reconcile against ADR-001 and `src/domain/` before using as a plan input.
+
 ## 🪝 The Webhook Slice (`features/payment/webhooks`)
 
 Now that we are fully committed to Server Actions for the frontend, the only traditional API routes (`route.ts`) you actually need to build are for external systems like PayMongo or Xendit communicating back to your server.
