@@ -1,0 +1,310 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CLIENT
+  LAB_ADMIN
+  ADMIN
+}
+
+enum PricingMode {
+  QUOTE_REQUIRED
+  FIXED
+  HYBRID
+}
+
+// Payment lifecycle states. PAYMENT_PENDING is the post-quote-approval and
+// post-fixed-creation state; PENDING is never the initial state. (ref: DL-006, DL-007)
+// PAYMENT_FAILED allows retry back to PAYMENT_PENDING. REFUND_PENDING and REFUNDED
+// are terminal-adjacent states reachable only from COMPLETED. (ref: DL-007)
+// Session model is absent; JWT strategy requires no server-side session storage.
+// VerificationToken is retained for the email verification flow. (ref: DL-005, DL-001)
+enum OrderStatus {
+  QUOTE_REQUESTED
+  QUOTE_PROVIDED
+  QUOTE_REJECTED
+  PENDING
+  PAYMENT_PENDING
+  PAYMENT_FAILED
+  ACKNOWLEDGED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+enum PayoutStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// 6 values: CHEMICAL_TESTING, BIOLOGICAL_TESTING, PHYSICAL_TESTING,
+// ENVIRONMENTAL_TESTING, CALIBRATION, CERTIFICATION.
+// Enum prevents arbitrary strings in the category column at DB level. (ref: DL-003)
+enum ServiceCategory {
+  CHEMICAL_TESTING
+  BIOLOGICAL_TESTING
+  PHYSICAL_TESTING
+  ENVIRONMENTAL_TESTING
+  CALIBRATION
+  CERTIFICATION
+}
+
+// SPECIFICATION, RESULT, ACCREDITATION_CERTIFICATE. Enum prevents arbitrary strings in the
+// attachment_type column at DB level. (ref: DL-004)
+enum AttachmentType {
+  SPECIFICATION
+  RESULT
+  ACCREDITATION_CERTIFICATE
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(CLIENT)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts    Account[]
+  labs        Lab[]
+  orders      Order[]
+  attachments Attachment[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Lab {
+  id             String   @id @default(cuid())
+  ownerId        String
+  name           String
+  description    String?
+  location       Json?
+  certifications String[]
+  isVerified     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  owner       User         @relation(fields: [ownerId], references: [id])
+  services    LabService[]
+  orders      Order[]
+  attachments Attachment[]
+  wallet      LabWallet?
+  payouts     Payout[]
+
+  @@index([ownerId])
+  @@map("labs")
+}
+
+model LabService {
+  id           String          @id @default(cuid())
+  labId        String
+  name         String
+  description  String?
+  category     ServiceCategory
+  pricingMode  PricingMode
+  pricePerUnit Decimal?        @db.Decimal(12, 2)
+  unit         String?
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  lab    Lab     @relation(fields: [labId], references: [id])
+  orders Order[]
+
+  @@index([labId])
+  @@map("lab_services")
+}
+
+// Order.labId is denormalized from the service relation for query convenience
+// despite update anomaly risk. clientProfile is a normalized one-to-one snapshot;
+// contact data shape is enforced at DB level. (ref: DL-002, DL-010)
+model Order {
+  id              String      @id @default(cuid())
+  clientId        String
+  labId           String
+  serviceId       String
+  status          OrderStatus @default(QUOTE_REQUESTED)
+  quantity        Int
+  notes           String?
+  quotedPrice     Decimal?    @db.Decimal(12, 2)
+  quotedAt        DateTime?
+  paymentIntentId String?
+  paidAt          DateTime?
+  paymentMethod   String?
+  refundedAt      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  client        User           @relation(fields: [clientId], references: [id])
+  lab           Lab            @relation(fields: [labId], references: [id])
+  service       LabService     @relation(fields: [serviceId], references: [id])
+  clientProfile ClientProfile?
+  attachments   Attachment[]
+  transactions  Transaction[]
+  payouts       Payout[]
+
+  @@index([clientId])
+  @@index([labId])
+  @@index([status])
+  @@map("orders")
+}
+
+// Snapshot of client contact data at order time; one-to-one with Order, not
+// reusable across orders. Contact data shape is DB-enforced via ClientProfile. (ref: DL-002)
+model ClientProfile {
+  id           String   @id @default(cuid())
+  orderId      String   @unique
+  name         String
+  email        String
+  phone        String
+  organization String?
+  address      String?
+  createdAt    DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("client_profiles")
+}
+
+model Attachment {
+  id             String         @id @default(cuid())
+  orderId        String
+  labId          String
+  uploadedById   String
+  attachmentType AttachmentType
+  fileName       String
+  fileUrl        String
+  fileSize       Int?
+  mimeType       String?
+  createdAt      DateTime       @default(now())
+
+  order      Order @relation(fields: [orderId], references: [id])
+  lab        Lab   @relation(fields: [labId], references: [id])
+  uploadedBy User  @relation(fields: [uploadedById], references: [id])
+
+  @@index([orderId])
+  @@index([uploadedById])
+  @@map("attachments")
+}
+
+model Transaction {
+  id            String            @id @default(cuid())
+  orderId       String
+  externalId    String            @unique
+  provider      String
+  amount        Decimal           @db.Decimal(12, 2)
+  currency      String            @default("PHP")
+  status        TransactionStatus @default(PENDING)
+  paymentMethod String?
+  checkoutUrl   String?
+  failureReason String?
+  metadata      Json?
+  capturedAt    DateTime?
+  refundedAt    DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  order   Order    @relation(fields: [orderId], references: [id])
+  payouts Payout[]
+
+  @@index([orderId, status])
+  @@index([externalId])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("transactions")
+}
+
+model Payout {
+  id               String       @id @default(cuid())
+  labId            String
+  orderId          String
+  transactionId    String
+  grossAmount      Decimal      @db.Decimal(12, 2)
+  platformFee      Decimal      @db.Decimal(12, 2)
+  netAmount        Decimal      @db.Decimal(12, 2)
+  feePercentage    Decimal      @db.Decimal(5, 4)
+  status           PayoutStatus @default(QUEUED)
+  externalPayoutId String?      @unique
+  scheduledDate    DateTime?
+  completedAt      DateTime?
+  failureReason    String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  lab         Lab         @relation(fields: [labId], references: [id])
+  order       Order       @relation(fields: [orderId], references: [id])
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+
+  @@index([labId, status])
+  @@index([orderId])
+  @@index([status, scheduledDate])
+  @@map("payouts")
+}
+
+// pendingBalance is credited when a Payout is QUEUED; availableBalance is credited
+// when the Payout reaches COMPLETED. withdrawnTotal accumulates completed disbursements. (ref: DL-011)
+model LabWallet {
+  id               String   @id @default(cuid())
+  labId            String   @unique
+  pendingBalance   Decimal  @default(0) @db.Decimal(12, 2)
+  availableBalance Decimal  @default(0) @db.Decimal(12, 2)
+  withdrawnTotal   Decimal  @default(0) @db.Decimal(12, 2)
+  currency         String   @default("PHP")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  lab Lab @relation(fields: [labId], references: [id])
+
+  @@map("lab_wallets")
+}
