@@ -7,3 +7,10 @@ node_modules/
 # Prisma
 prisma/migrations/
 /.claude
+.claude/planner-state/
+
+tsconfig.tsbuildinfo
+
+backup_codes.csv
+secret_api_key.csv
+ngrok_recovery_codes.txt

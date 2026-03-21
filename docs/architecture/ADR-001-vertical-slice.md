@@ -216,7 +216,7 @@ export type ClientDetails = z.infer<typeof clientDetailsSchema>
 export function resolveOrderInitialState(
   service: Pick<LabService, 'pricingMode' | 'pricePerUnit'>,
   requestCustomQuote: boolean | undefined
-): { status: 'QUOTE_REQUESTED' | 'PENDING'; quotedPrice: Decimal | null; quotedAt: Date | null } {
+): { status: 'QUOTE_REQUESTED' | 'PAYMENT_PENDING'; quotedPrice: Decimal | null; quotedAt: Date | null } {
   if (service.pricingMode === 'QUOTE_REQUIRED') {
     return { status: 'QUOTE_REQUESTED', quotedPrice: null, quotedAt: null }
   }
@@ -224,7 +224,7 @@ export function resolveOrderInitialState(
     // NOTE: FIXED mode is an implicit pre-approved quote. The lab's pricePerUnit
     // becomes the quotedPrice without client approval action. This is intentional
     // backward-compatibility behavior. quotedAt is set to order creation time.
-    return { status: 'PENDING', quotedPrice: service.pricePerUnit, quotedAt: new Date() }
+    return { status: 'PAYMENT_PENDING', quotedPrice: service.pricePerUnit, quotedAt: new Date() }
   }
   if (service.pricingMode === 'HYBRID') {
     if (requestCustomQuote === true) {
@@ -232,7 +232,7 @@ export function resolveOrderInitialState(
     }
     // NOTE: undefined (omitted) falls through to instant-booking, same as false.
     // This is intentional: opt-in to custom quote is explicit; default is fixed-price booking.
-    return { status: 'PENDING', quotedPrice: service.pricePerUnit, quotedAt: new Date() }
+    return { status: 'PAYMENT_PENDING', quotedPrice: service.pricePerUnit, quotedAt: new Date() }
   }
   // Safety fallback: unknown pricing mode defaults to quote-required
   return { status: 'QUOTE_REQUESTED', quotedPrice: null, quotedAt: null }
@@ -262,7 +262,9 @@ export interface PaymentFailedEvent {
 
 ### Required Slice Pattern for Order Status Writes
 
-Every feature slice action that writes `Order.status` MUST follow this pattern:
+**Applies to status mutations on existing orders.** Initial order creation is exempt — there is no prior status to transition from; `resolveOrderInitialState()` serves as the domain gate for the initial status (see `src/domain/orders/pricing.ts`).
+
+Every feature slice action that **mutates** `Order.status` on an existing order MUST follow this pattern:
 
 ```typescript
 // src/features/orders/patch-order-status/action.ts — example
