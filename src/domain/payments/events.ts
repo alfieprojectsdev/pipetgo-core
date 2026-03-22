@@ -20,6 +20,9 @@ export interface PaymentCapturedEvent {
   // gatewayRef is captured here so dispute resolution and payout reconciliation
   // can reference the gateway record without re-querying PayMongo.
   capturedAt: Date;
+  // paymentMethod carried on the event so orders slice can write Order.paymentMethod
+  // without querying the Transaction model (cross-slice boundary violation). (ref: DL-009)
+  paymentMethod?: string;
 }
 
 export interface PaymentFailedEvent {
