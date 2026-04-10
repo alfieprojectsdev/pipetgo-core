@@ -9,14 +9,7 @@ import { TransactionStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { PaymentCapturedEvent } from '@/domain/payments/events'
 import { handlePaymentCaptured } from '@/features/orders/handle-payment-captured/handler'
-
-interface XenditInvoicePayload {
-  id: string
-  status: string
-  paid_amount: number
-  payer_email: string
-  payment_method?: string
-}
+import type { XenditInvoicePayload } from './types'
 
 /**
  * Finds the Transaction by Xendit invoice ID, marks it CAPTURED, and dispatches

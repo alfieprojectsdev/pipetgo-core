@@ -11,14 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { processPaymentCapture } from './handlers'
-
-interface XenditInvoicePayload {
-  id: string
-  status: string
-  paid_amount: number
-  payer_email: string
-  payment_method?: string
-}
+import type { XenditInvoicePayload } from './types'
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const expected = process.env.XENDIT_WEBHOOK_TOKEN

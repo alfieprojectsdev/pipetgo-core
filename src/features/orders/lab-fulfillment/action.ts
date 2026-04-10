@@ -9,8 +9,8 @@
  * Both actions:
  *   1. Validate formData (orderId present).
  *   2. Auth guard — LAB_ADMIN session required (TOCTOU re-check).
- *   3. Re-fetch Order from DB with lab relation and re-check ownership + status
- *      (TOCTOU guard: status may change between page load and action execution).
+ *   3. Atomically re-fetch Order, verify ownership + status, and write new status
+ *      inside a $transaction to eliminate the TOCTOU race window.
  *   4. Call isValidStatusTransition() before any Prisma write.
  *   5. Write new status to DB.
  *   6. revalidatePath so the page reflects the updated state.
@@ -26,9 +26,9 @@ import { isValidStatusTransition } from '@/domain/orders/state-machine'
 type ActionState = { message?: string } | null
 
 /**
- * Transitions an ACKNOWLEDGED order to IN_PROGRESS. Re-fetches the order
- * from the DB on every invocation to guard against TOCTOU races where the
- * order status changes between page load and form submission. (ref: DL-007)
+ * Transitions an ACKNOWLEDGED order to IN_PROGRESS. The re-fetch, ownership
+ * check, and status write are wrapped in a single $transaction for an atomic
+ * read-check-write, eliminating the TOCTOU race window. (ref: DL-007)
  * Ownership is re-verified against Lab.ownerId — formData orderId alone is
  * untrusted. Page re-renders via revalidatePath; no redirect. (ref: DL-006)
  */
@@ -44,22 +44,28 @@ export async function startProcessing(
     return { message: 'Unauthorized.' }
   }
 
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: { lab: true },
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { lab: true },
+    })
+
+    if (!order || !order.lab || order.lab.ownerId !== session.user.id) {
+      return { message: 'Order not found.' }
+    }
+    if (!isValidStatusTransition(order.status, OrderStatus.IN_PROGRESS)) {
+      return { message: 'Order cannot be transitioned to IN_PROGRESS from current status.' }
+    }
+
+    await tx.order.update({
+      where: { id: orderId },
+      data: { status: OrderStatus.IN_PROGRESS },
+    })
+
+    return null
   })
 
-  if (!order || !order.lab || order.lab.ownerId !== session.user.id) {
-    return { message: 'Order not found.' }
-  }
-  if (!isValidStatusTransition(order.status, OrderStatus.IN_PROGRESS)) {
-    return { message: 'Order cannot be transitioned to IN_PROGRESS from current status.' }
-  }
-
-  await prisma.order.update({
-    where: { id: orderId },
-    data: { status: OrderStatus.IN_PROGRESS },
-  })
+  if (result !== null) return result
 
   revalidatePath(`/dashboard/lab/orders/${orderId}`)
   return null
@@ -67,9 +73,10 @@ export async function startProcessing(
 
 /**
  * Transitions an IN_PROGRESS order to COMPLETED and writes the lab
- * technician's result notes to Order.notes. Applies the same TOCTOU and
- * ownership guards as startProcessing. Redirects to /dashboard/lab on
- * success. (ref: DL-006, DL-007)
+ * technician's result notes to Order.notes. The re-fetch, ownership check,
+ * and status write are wrapped in a single $transaction for an atomic
+ * read-check-write, eliminating the TOCTOU race window. Redirects to
+ * /dashboard/lab on success. (ref: DL-006, DL-007)
  */
 export async function completeOrder(
   _prevState: ActionState,
@@ -83,27 +90,33 @@ export async function completeOrder(
     return { message: 'Unauthorized.' }
   }
 
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: { lab: true },
-  })
-
-  if (!order || !order.lab || order.lab.ownerId !== session.user.id) {
-    return { message: 'Order not found.' }
-  }
-  if (!isValidStatusTransition(order.status, OrderStatus.COMPLETED)) {
-    return { message: 'Order cannot be transitioned to COMPLETED from current status.' }
-  }
-
   const notes = (formData.get('notes') as string | null)?.trim() || null
 
-  await prisma.order.update({
-    where: { id: orderId },
-    data: {
-      status: OrderStatus.COMPLETED,
-      ...(notes != null ? { notes } : {}),
-    },
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { lab: true },
+    })
+
+    if (!order || !order.lab || order.lab.ownerId !== session.user.id) {
+      return { message: 'Order not found.' }
+    }
+    if (!isValidStatusTransition(order.status, OrderStatus.COMPLETED)) {
+      return { message: 'Order cannot be transitioned to COMPLETED from current status.' }
+    }
+
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status: OrderStatus.COMPLETED,
+        ...(notes != null ? { notes } : {}),
+      },
+    })
+
+    return null
   })
+
+  if (result !== null) return result
 
   revalidatePath('/dashboard/lab')
   redirect('/dashboard/lab')
