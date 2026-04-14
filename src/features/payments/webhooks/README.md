@@ -17,7 +17,11 @@ and Order records atomically.
    - Updates `Transaction` to `CAPTURED`, sets `capturedAt`.
    - Constructs `PaymentCapturedEvent` and calls `handlePaymentCaptured` from the
      orders slice inside the same transaction.
+   - Fetches `Order.labId` (read-consistent within same transaction). (ref: DL-004)
+   - Upserts `LabWallet.pendingBalance += Transaction.amount` (Decimal, not payload float) for the lab. (ref: DL-002, DL-003, DL-005)
 5. `$transaction` errors propagate as 500 — Xendit retries on non-2xx.
+6. A Xendit retry on a previously-captured Transaction hits the `CAPTURED` guard and exits
+   before any writes, preventing double-credit of `LabWallet.pendingBalance`. (ref: DL-007)
 
 ## Two-ID scheme
 
@@ -45,6 +49,30 @@ Xendit retries automatically on transient failures.
   not `payload.paid_amount` (float). (ref: DL-005)
 - Order status transitions are owned by the orders slice — this handler never
   writes `Order.status` directly. (ref: DL-001)
+- `LabWallet.pendingBalance` is credited at capture time; `availableBalance` is only
+  incremented when a Payout reaches `COMPLETED`. Crediting `availableBalance` here would
+  skip the payout lifecycle. (ref: DL-002)
+- `LabWallet` upsert uses `upsert` (not `update`) — a row may not exist for a lab's
+  first payment. (ref: DL-005)
+- `LabWallet.labId` is `@unique` (prisma/schema.prisma:299); the Prisma `$transaction`
+  holds a row lock for the upsert, making concurrent webhook deliveries race-free — no
+  separate application-level guard is needed.
+
+## Design decisions
+
+**LabWallet credit is inlined in `handlers.ts`** rather than extracted to a separate
+`wallets/credit-wallet` slice. ADR-001 uses a `creditLabWallet` fan-out example that
+names a hypothetical `@/features/wallets/credit-wallet/handler` — that example is
+aspirational documentation for a future wallets slice, not a binding constraint. The
+implementation was deliberately scoped to the webhook slice only; extracting a wallets
+slice would introduce a new cross-slice import from payments to wallets, which is a
+larger architectural change requiring its own plan.
+
+**Order is fetched twice within the same `$transaction`** — once inside
+`handlePaymentCaptured` (for status transition) and once in `handlers.ts` (for
+`labId`). This double-read is an accepted tradeoff at MVP order volumes: PostgreSQL
+read-consistency guarantees both reads see the same snapshot at negligible cost. If
+needed, this can be eliminated later by returning `labId` from `handlePaymentCaptured`.
 
 ## Required env vars
 

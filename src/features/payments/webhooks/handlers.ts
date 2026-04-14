@@ -2,8 +2,9 @@
  * Payment capture processor for Xendit invoice webhooks.
  *
  * processPaymentCapture runs all DB writes inside a single Prisma $transaction:
- * idempotency check, Transaction update, and Order update are atomic.
- * Errors propagate as 500 so Xendit retries on transient DB failures. (ref: DL-004, DL-006)
+ * idempotency check, Transaction update, Order status transition, and LabWallet credit are atomic.
+ * Any throw at any step rolls back all writes; Xendit retries on 500 reattempt the full capture.
+ * (ref: DL-001, DL-004, DL-006)
  */
 import { TransactionStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
@@ -12,12 +13,15 @@ import { handlePaymentCaptured } from '@/features/orders/handle-payment-captured
 import type { XenditInvoicePayload } from './types'
 
 /**
- * Finds the Transaction by Xendit invoice ID, marks it CAPTURED, and dispatches
- * PaymentCapturedEvent to the orders slice handler — all within one $transaction.
+ * Finds the Transaction by Xendit invoice ID, marks it CAPTURED, dispatches
+ * PaymentCapturedEvent to the orders slice handler, and credits the lab's
+ * LabWallet.pendingBalance by Transaction.amount — all within one $transaction.
+ * Credits LabWallet.pendingBalance atomically after Order status transition. (ref: DL-002, DL-005)
  *
  * Returns early (200 to caller) if Transaction is not found (orphan tolerance) or
  * already CAPTURED (idempotency). Both guards are inside the transaction boundary
- * to prevent race conditions from concurrent webhook deliveries. (ref: DL-004)
+ * to prevent race conditions from concurrent webhook deliveries; retried Xendit requests
+ * exit before the LabWallet upsert, preventing double-credit. (ref: DL-004, DL-007)
  */
 export async function processPaymentCapture(payload: XenditInvoicePayload): Promise<void> {
   await prisma.$transaction(async (tx) => {
@@ -60,5 +64,25 @@ export async function processPaymentCapture(payload: XenditInvoicePayload): Prom
 
     // Delegates Order.status transition to orders slice — ADR-001 fan-out pattern. (ref: DL-001)
     await handlePaymentCaptured(event, tx)
+
+    // Fetch Order for labId — Order.labId is non-nullable; same-tx fetch is read-consistent. (ref: DL-004)
+    // Order is fetched twice per transaction (once in handlePaymentCaptured, once here) — accepted at MVP scale.
+    const order = await tx.order.findUnique({
+      where: { id: transaction.orderId },
+      select: { labId: true },
+    })
+
+    if (!order) {
+      throw new Error(`Order not found for orderId ${transaction.orderId} during LabWallet credit`)
+    }
+
+    // Credit LabWallet.pendingBalance — upsert creates on first payment, increments on subsequent.
+    // Uses Transaction.amount (Decimal) not payload float. (ref: DL-002, DL-003, DL-005)
+    // labId @unique (schema:299) + $transaction row lock makes this race-free under concurrent delivery.
+    await tx.labWallet.upsert({
+      where: { labId: order.labId },
+      update: { pendingBalance: { increment: transaction.amount } },
+      create: { labId: order.labId, pendingBalance: transaction.amount },
+    })
   })
 }
