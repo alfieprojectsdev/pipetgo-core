@@ -82,3 +82,23 @@ needed, this can be eliminated later by returning `labId` from `handlePaymentCap
 
 Missing `XENDIT_WEBHOOK_TOKEN` returns 500 (not 401) to surface misconfiguration
 in error monitoring before any token comparison.
+
+## Test strategy
+
+Integration tests for `processPaymentCapture` are split across two files by mocking strategy:
+
+| File | Tests | DB strategy | Why |
+|------|-------|-------------|-----|
+| `__tests__/handlers.test.ts` | 1-3: wallet creation, balance increment, idempotency | Real test database (`DATABASE_TEST_URL`) | Financial ledger correctness requires DB-level verification — mocking hides Decimal type mismatches and FK constraint errors |
+| `__tests__/handlers-rollback.test.ts` | 4: rollback error propagation | Full Prisma mock (`vi.fn()` stubs) | Forcing `tx.labWallet.upsert` to fail on a real database requires schema changes; `$transaction` atomicity is a Prisma/PostgreSQL guarantee, so this test verifies error propagation only |
+
+Tests 1-3 require `DATABASE_TEST_URL` set in `.env.test`. The global setup
+(`src/test/global-setup.ts`) runs `prisma db push` against the test database
+before any tests execute.
+
+### Why the split matters
+
+A test added to `handlers.test.ts` that mocks Prisma would silently defeat the
+purpose of the real-DB tests — mocked Decimal arithmetic does not catch
+`toFixed()` regressions or FK constraint violations. Keep tests 1-3 on the real
+DB; add new mock-based tests to `handlers-rollback.test.ts`.
