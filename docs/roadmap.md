@@ -22,6 +22,8 @@ T-09 Payout creation on completion         [ready — lab-fulfillment done]
 
 T-12 Attachment uploads                    [blocked: T-06, storage decision]
 T-13 Admin panel                           [blocked: T-01, post-MVP]
+
+T-14 Payment provider normalization        [ready — refactor, no feature deps]
 ```
 
 ---
@@ -236,6 +238,55 @@ separate spike ticket to evaluate options.
 
 Lab verification (`isVerified`), user role management, order oversight.
 `UserRole.ADMIN` exists in schema; no admin slices exist.
+
+---
+
+### T-14 — Payment provider normalization
+**Branch:** `feat/T14-payment-provider-normalization`
+**Status:** ready (refactor, no feature dependencies)
+
+The current webhook handler (`processPaymentCapture`) accepts `XenditInvoicePayload`
+directly — Xendit's raw payload shape leaks into the business logic layer. Adding a
+second payment processor (HitPay, PayMongo, etc.) would require either duplicating the
+handler or casting a foreign payload to Xendit's type.
+
+**The fix:** introduce a provider-neutral internal type and move all provider-specific
+mapping into each provider's route before it reaches the handler.
+
+**Files to create:**
+- `src/lib/payments/types.ts` — `NormalizedWebhookPayload` interface:
+  ```ts
+  export interface NormalizedWebhookPayload {
+    externalId: string      // maps to Transaction.externalId for DB lookup
+    status: 'paid' | 'failed' | 'other'
+    paymentMethod?: string
+  }
+  ```
+
+**Files to modify:**
+- `src/features/payments/webhooks/types.ts` — keep `XenditInvoicePayload` for
+  parsing the raw request body; add a `normalizeXenditPayload(payload: XenditInvoicePayload): NormalizedWebhookPayload` function
+- `src/features/payments/webhooks/route.ts` — call `normalizeXenditPayload` after
+  parsing; pass `NormalizedWebhookPayload` to `processPaymentCapture`
+- `src/features/payments/webhooks/handlers.ts` — change signature to accept
+  `NormalizedWebhookPayload` instead of `XenditInvoicePayload`; remove
+  `XenditInvoicePayload` import
+- `src/domain/payments/events.ts` — fix stale "PayMongo" references in JSDoc
+  (project uses Xendit; these are copy-paste artifacts from original design)
+- `src/domain/payments/CLAUDE.md` — same stale reference fix
+
+**Acceptance criteria:**
+- `processPaymentCapture` imports nothing from `XenditInvoicePayload` or any
+  provider-specific type
+- `src/features/payments/webhooks/route.ts` is the only file that references
+  `XenditInvoicePayload` (mapping happens at the boundary)
+- `npx tsc --noEmit` passes; existing webhook tests pass without modification
+- Adding a second provider (`src/lib/payments/hitpay.ts` + new route) requires
+  no changes to `handlers.ts` or `src/domain/`
+
+**Note:** Do not introduce a `PaymentProvider` interface or factory pattern — that
+abstraction is YAGNI until a second provider is actually being added. The normalized
+type alone is sufficient to decouple the boundary.
 
 ---
 
