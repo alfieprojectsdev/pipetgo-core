@@ -29,3 +29,20 @@ Next.js lab testing marketplace. VSA + minimal domain kernel (see `README.md`).
 npm install && npx prisma generate
 npx tsc --noEmit && npx eslint src/domain/
 ```
+
+## PR Workflow
+
+Every plan implementation ships as a PR, not a direct push to `main`. CodeRabbit is installed on the repo and reviews automatically on every PR.
+
+**Branch naming:** `feat/T{nn}-{slug}` — e.g. `feat/T01-auth-providers`
+
+**Steps for each ticket:**
+1. `git checkout -b feat/T{nn}-{slug}` from an up-to-date `main`
+2. Implement the plan (write the plan file first if one doesn't exist)
+3. `npx tsc --noEmit` — must be clean before opening PR
+4. `npm test -- --run` — all tests must pass
+5. Open PR against `main`; CodeRabbit reviews within minutes
+6. Address any CodeRabbit blocking comments; re-request review
+7. Squash-merge into `main`; delete the branch
+
+**PR title format:** `feat: {ticket slug} — {one-line description}` matching the commit style already in this repo.
