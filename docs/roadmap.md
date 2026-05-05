@@ -2,37 +2,40 @@
 
 Tickets are ordered by dependency. Each ticket maps to one plan file and one PR.
 Status: `done` | `ready` (unblocked) | `blocked` (dependency not done)
+Workflow: `[planner]` = requires explore → plan → /clear → execute sequence before implementation.
+         No tag = implement directly (pattern is clear, single slice, no financial risk).
 
 ## Dependency tree
 
 ```
-T-01 Auth providers                        [ready]
+T-01 Auth providers                        [ready] [planner]
 ├── T-02 Lab onboarding                    [blocked: T-01]
 │   └── T-03 Lab service management        [blocked: T-02]
 │       └── T-04 Service marketplace       [blocked: T-03]
-│           └── T-05 ClientProfile on      [blocked: T-04]
+│           └── T-05 ClientProfile on      [blocked: T-04] [planner]
 │                    create-order
 └── T-06 Order detail page (client)        [blocked: T-01]
-    ├── T-07 Quote flow                    [blocked: T-06, T-03]
-    └── T-08 Payment failure retry         [blocked: T-06]
+    ├── T-07 Quote flow                    [blocked: T-06, T-03] [planner]
+    └── T-08 Payment failure retry         [blocked: T-06] [planner]
 
-T-09 Payout creation on completion         [ready — lab-fulfillment done]
-└── T-10 Payout disbursement webhook       [blocked: T-09]
+T-09 Payout creation on completion         [ready — lab-fulfillment done] [planner]
+└── T-10 Payout disbursement webhook       [blocked: T-09] [planner]
     └── T-11 Lab wallet dashboard          [blocked: T-10]
 
-T-12 Attachment uploads                    [blocked: T-06, storage decision]
-T-13 Admin panel                           [blocked: T-01, post-MVP]
+T-12 Attachment uploads                    [blocked: T-06, storage decision] [planner]
+T-13 Admin panel                           [blocked: T-01, post-MVP] [planner]
 
-T-14 Payment provider normalization        [ready — refactor, no feature deps]
+T-14 Payment provider normalization        [ready — refactor, no feature deps] [planner]
 ```
 
 ---
 
 ## Tickets
 
-### T-01 — Auth providers
+### T-01 — Auth providers `[planner]`
 **Branch:** `feat/T01-auth-providers`
 **Status:** ready
+**Why planner:** NextAuth v5 beta callback shape, JWT session augmentation for `role` field, role-based redirect logic, and provider credential env vars all have non-obvious decisions. Plan must document session type extension and role-routing invariants before any implementation sub-agent touches `src/lib/auth.ts`.
 
 Set up a real OAuth provider (Google recommended) in `src/lib/auth.ts`.
 Currently `providers: []` — no user can log in. Without this, nothing works
@@ -96,9 +99,10 @@ Entry point for client order creation — links to `/orders/new?serviceId=...`.
 
 ---
 
-### T-05 — ClientProfile collection on create-order
+### T-05 — ClientProfile collection on create-order `[planner]`
 **Branch:** `feat/T05-client-profile`
 **Status:** blocked by T-04
+**Why planner:** Modifies existing production action. Decisions needed: transaction boundary (ClientProfile inside same `$transaction` as Order), domain schema import discipline (`clientDetailsSchema` must be the sole validator), and whether to rewrite or surgically patch the existing action and UI without breaking the FIXED-mode happy path.
 
 Enhancement to the existing `create-order` slice. The current Server Action
 creates an `Order` but does not write `ClientProfile`. Add contact fields
@@ -132,9 +136,10 @@ dashboard already links here (`href` only, no page exists yet).
 
 ---
 
-### T-07 — Quote flow
+### T-07 — Quote flow `[planner]`
 **Branch:** `feat/T07-quote-flow`
 **Status:** blocked by T-06, T-03
+**Why planner:** Two sub-slices (lab-side provide, client-side respond), three state transitions (`QUOTE_REQUESTED→QUOTE_PROVIDED`, `QUOTE_PROVIDED→PENDING`, `QUOTE_PROVIDED→QUOTE_REJECTED`), TOCTOU guards on each, and the accept path must hand off to the existing checkout slice without coupling. Multiple non-obvious decisions about where to surface the quote UI on the order detail page.
 
 Lab-side: LAB_ADMIN sets `quotedPrice` on a `QUOTE_REQUESTED` order
 (→ `QUOTE_PROVIDED`). Client-side: accept (→ `PENDING` → checkout) or reject
@@ -150,9 +155,10 @@ Lab-side: LAB_ADMIN sets `quotedPrice` on a `QUOTE_REQUESTED` order
 
 ---
 
-### T-08 — Payment failure retry
+### T-08 — Payment failure retry `[planner]`
 **Branch:** `feat/T08-payment-retry`
 **Status:** blocked by T-06
+**Why planner:** Touches the existing webhook handler (adding failure path alongside the capture path), creates a new Transaction on retry (not updating the failed one — the two-ID scheme must be preserved), and the retry CTA on the order detail page must be gated on `PAYMENT_FAILED` status without introducing client-component sprawl.
 
 Xendit delivers a failure webhook → `Transaction.status = FAILED`,
 `Order.status = PAYMENT_FAILED`. Client sees retry CTA on order detail page;
@@ -168,9 +174,10 @@ action creates a new Xendit invoice and transitions back to `PAYMENT_PENDING`.
 
 ---
 
-### T-09 — Payout creation on order completion
+### T-09 — Payout creation on order completion `[planner]`
 **Branch:** `feat/T09-payout-creation`
 **Status:** ready (lab-fulfillment done)
+**Why planner:** Modifies the existing production `completeOrder` action. Fee arithmetic must use `Decimal` throughout (no float intermediate). The plan must decide where the platform fee constant lives (domain kernel vs env config), whether the Payout write belongs inside the existing `$transaction` or as a follow-on, and ensure `LabWallet.pendingBalance` is not double-credited.
 
 When `completeOrder` action fires (`IN_PROGRESS → COMPLETED`), create a
 `Payout` record (`QUEUED`) with `grossAmount = Transaction.amount`,
@@ -187,9 +194,10 @@ Platform fee percentage is a config constant for now.
 
 ---
 
-### T-10 — Payout disbursement webhook
+### T-10 — Payout disbursement webhook `[planner]`
 **Branch:** `feat/T10-payout-disbursement`
 **Status:** blocked by T-09
+**Why planner:** New webhook slice with financial atomicity requirements (`availableBalance += netAmount`, `pendingBalance -= netAmount` in one `$transaction`), idempotency guard pattern, and the balance-never-negative invariant. Also the first use of the payout provider's webhook auth mechanism — decisions about HMAC vs token must be documented and consistent with T-14's normalization pattern.
 
 External payout provider (Xendit disbursement) webhook marks `Payout.status =
 COMPLETED`. Handler increments `LabWallet.availableBalance` by `Payout.netAmount`
@@ -220,9 +228,10 @@ and decrements `pendingBalance` by the same amount atomically.
 
 ---
 
-### T-12 — Attachment uploads
+### T-12 — Attachment uploads `[planner]`
 **Branch:** `feat/T12-attachments`
 **Status:** blocked by T-06, requires storage decision (S3 / Supabase Storage / Cloudflare R2)
+**Why planner:** Storage provider integration, signed URL pattern vs direct upload, file type/size validation at the action boundary, and two distinct upload actors (client uploads specs, lab uploads results) with different permission guards. Storage provider must be decided and documented before the plan can be written.
 
 Client uploads specification documents at order creation; lab uploads result
 documents at order completion. Uses the `Attachment` model.
@@ -232,18 +241,20 @@ separate spike ticket to evaluate options.
 
 ---
 
-### T-13 — Admin panel
+### T-13 — Admin panel `[planner]`
 **Branch:** `feat/T13-admin`
 **Status:** post-MVP, blocked by T-01
+**Why planner:** Scope is deliberately undefined at this stage — plan must define the surface area (which operations, which pages) before implementation. Touches role-gating across multiple existing slices and will likely require new middleware or layout-level auth guards.
 
 Lab verification (`isVerified`), user role management, order oversight.
 `UserRole.ADMIN` exists in schema; no admin slices exist.
 
 ---
 
-### T-14 — Payment provider normalization
+### T-14 — Payment provider normalization `[planner]`
 **Branch:** `feat/T14-payment-provider-normalization`
 **Status:** ready (refactor, no feature dependencies)
+**Why planner:** Cross-cutting refactor across `src/lib/payments/`, `src/features/payments/webhooks/`, and `src/domain/payments/`. The plan must define the exact shape of `NormalizedWebhookPayload`, the location of the normalizer function, and confirm that existing webhook tests pass without modification after the type boundary moves.
 
 The current webhook handler (`processPaymentCapture`) accepts `XenditInvoicePayload`
 directly — Xendit's raw payload shape leaks into the business logic layer. Adding a
