@@ -26,6 +26,18 @@ T-12 Attachment uploads                    [blocked: T-06, storage decision] [pl
 T-13 Admin panel                           [blocked: T-01, post-MVP] [planner]
 
 T-14 Payment provider normalization        [ready — refactor, no feature deps] [planner]
+
+── Phase 2 infrastructure ──────────────────────────────────────────────────
+T-15 Lab KYC document upload              [blocked: T-02] [planner]
+T-16 Idempotency key table                [ready — schema migration] [planner]
+T-17 PESONet virtual account integration  [blocked: T-14, payment research] [planner]
+
+── Phase 3 regulatory ──────────────────────────────────────────────────────
+T-18 Lab accreditation verification       [blocked: T-02, T-13] [planner]
+    (ISO 17025 / ITA solidary liability)
+T-19 Dispute and redress mechanism        [blocked: T-06, schema migration] [planner]
+    (ITA 2023 internal redress requirement)
+T-20 RA 10173 privacy compliance          [blocked: T-05] [planner]
 ```
 
 ---
@@ -179,6 +191,12 @@ action creates a new Xendit invoice and transitions back to `PAYMENT_PENDING`.
 **Status:** ready (lab-fulfillment done)
 **Why planner:** Modifies the existing production `completeOrder` action. Fee arithmetic must use `Decimal` throughout (no float intermediate). The plan must decide where the platform fee constant lives (domain kernel vs env config), whether the Payout write belongs inside the existing `$transaction` or as a follow-on, and ensure `LabWallet.pendingBalance` is not double-credited.
 
+**Prerequisite decision (resolve before planning):** Choose the money routing model:
+- **Aggregator model** (current architecture): client pays PipetGo → PipetGo disburses to lab net of platform fee. PipetGo is the merchant of record; BIR withholding agent obligations apply.
+- **Direct payment model**: client pays lab directly through the gateway; PipetGo invoices the lab separately for its commission. Avoids withholding agent complexity but requires separate commission collection infrastructure.
+
+The choice materially changes what T-09 and T-10 implement. Resolve with legal counsel before writing the plan.
+
 When `completeOrder` action fires (`IN_PROGRESS → COMPLETED`), create a
 `Payout` record (`QUEUED`) with `grossAmount = Transaction.amount`,
 `platformFee = grossAmount * feePercentage`, `netAmount = gross - fee`.
@@ -298,6 +316,150 @@ mapping into each provider's route before it reaches the handler.
 **Note:** Do not introduce a `PaymentProvider` interface or factory pattern — that
 abstraction is YAGNI until a second provider is actually being added. The normalized
 type alone is sufficient to decouple the boundary.
+
+---
+
+### T-15 — Lab KYC document upload `[planner]`
+**Branch:** `feat/T15-lab-kyc-upload`
+**Status:** blocked by T-02
+**Why planner:** Integrates with the payment gateway's KYC API (Xendit business verification or equivalent) to submit lab business documents (BIR 2303, DTI/SEC registration). Two surfaces: (1) upload UI for the LAB_ADMIN during onboarding, (2) status polling/webhook from the gateway confirming KYC approval. Gateway KYC API shape and error vocabulary must be documented in the plan before implementation.
+
+Labs must submit business registration documents to the payment gateway before they
+can receive payouts. `AttachmentType.ACCREDITATION_CERTIFICATE` already in schema
+for file storage; this ticket adds the gateway KYC submission layer.
+
+**Files:** `src/features/labs/kyc/` (new slice), `src/lib/payments/xendit.ts` (add KYC API calls)
+
+**Acceptance criteria:**
+- LAB_ADMIN can upload BIR 2303 and DTI/SEC docs from their dashboard
+- Documents are submitted to the payment gateway KYC endpoint
+- Gateway KYC status (`pending` / `approved` / `rejected`) is reflected on the lab dashboard
+- Labs with unapproved KYC cannot receive payouts (gate in T-10)
+
+---
+
+### T-16 — Idempotency key table `[planner]`
+**Branch:** `feat/T16-idempotency-keys`
+**Status:** ready (schema migration, no feature dependencies)
+**Why planner:** Schema migration adds `IdempotencyKey` model; existing webhook handlers must be updated to use it without breaking the current CAPTURED-status guard. Plan must define key composition (provider + externalId + event type), TTL strategy, and whether the table replaces or supplements the existing status-based guard.
+
+Current idempotency relies on `Transaction.status === CAPTURED` inside `$transaction`,
+which is sufficient for the payment capture webhook but not for payout disbursement
+callbacks, PESONet callbacks, or future provider webhooks. A formal `IdempotencyKey`
+table provides a general deduplication layer across all async webhook types.
+
+**Schema addition:**
+```prisma
+model IdempotencyKey {
+  id          String   @id @default(cuid())
+  key         String   @unique  // e.g. "xendit:invoice:PAID:{externalId}"
+  processedAt DateTime @default(now())
+  @@map("idempotency_keys")
+}
+```
+
+**Files:** `prisma/schema.prisma`, `src/features/payments/webhooks/handlers.ts` (add key check), `src/features/payments/payouts/` (use key in T-10 handler)
+
+**Acceptance criteria:**
+- Duplicate webhook delivery for any event type returns 200 without re-processing
+- `IdempotencyKey` check is inside the same `$transaction` as the business logic write
+- Existing payment capture tests continue to pass
+
+---
+
+### T-17 — PESONet virtual account integration `[planner]`
+**Branch:** `feat/T17-pesonet-virtual-account`
+**Status:** blocked by T-14 (normalization), pending payment processor research
+**Why planner:** New payment provider integration. PESONet virtual account creation, payment notification webhook (different auth mechanism from Xendit invoice webhook), and amount reconciliation against Order. Must follow T-14's `NormalizedWebhookPayload` pattern so the existing capture handler requires no changes.
+
+B2B lab contracts frequently exceed InstaPay's ₱50,000 per-transaction ceiling.
+PESONet has no per-transaction limit, making it a prerequisite for enterprise clients.
+Requires virtual account creation per order and a separate webhook endpoint.
+
+**Files:** `src/lib/payments/pesonet.ts` (new provider client), `src/features/payments/webhooks/pesonet/route.ts` (new webhook route), `src/app/api/webhooks/pesonet/route.ts`
+
+**Acceptance criteria:**
+- CLIENT can select PESONet as payment method for orders above ₱50,000
+- Virtual account number is generated per order and shown on the order detail page
+- Payment confirmation webhook updates Transaction and Order atomically using the same `processPaymentCapture` handler as Xendit (via normalized payload)
+- No changes to `handlers.ts` required
+
+---
+
+### T-18 — Lab accreditation verification `[planner]`
+**Branch:** `feat/T18-lab-verification`
+**Status:** blocked by T-02 (labs exist), T-13 (admin panel exists)
+**Why planner:** Under the Internet Transactions Act (ITA) of 2023, PipetGo has solidary liability for unsafe or unaccredited services listed on the platform. `Lab.isVerified` and `AttachmentType.ACCREDITATION_CERTIFICATE` already exist in schema; this ticket enforces them. Plan must define the verification workflow, what the admin reviews, and where `isVerified` gates are enforced in the marketplace and order creation flow.
+
+Labs must hold a DTI-PAB ISO 17025 accreditation certificate. Platform must verify
+this before a lab's services appear in the marketplace. `Lab.isVerified = false`
+by default; only ADMIN can set it to `true` after reviewing submitted documents.
+
+**Files:** `src/features/labs/verification/` (admin review slice), marketplace filter (gate on `isVerified`), create-order guard (prevent orders on unverified labs)
+
+**Acceptance criteria:**
+- Services from unverified labs are hidden from the marketplace
+- LAB_ADMIN can submit ISO 17025 certificate via the platform (stored as `AttachmentType.ACCREDITATION_CERTIFICATE`)
+- ADMIN can approve or reject, setting `Lab.isVerified`
+- Clients cannot create orders against unverified labs (server-side guard, not just UI)
+- Verification status is visible to the lab owner on their dashboard
+
+---
+
+### T-19 — Dispute and redress mechanism `[planner]`
+**Branch:** `feat/T19-dispute-redress`
+**Status:** blocked by T-06, T-07; requires schema migration
+**Why planner:** The Internet Transactions Act (ITA) of 2023 requires an internal redress mechanism. This ticket adds a `DISPUTED` order status (schema migration), the state machine transitions into and out of it, a dispute initiation slice for the client, an admin resolution slice, and the fund-holding logic that prevents lab payout release while a dispute is open. Multiple actors, multiple transitions, financial hold semantics.
+
+**Schema migration required:** add `DISPUTED` to `OrderStatus` enum.
+
+**New transitions (state machine update required):**
+- `COMPLETED → DISPUTED` (client initiates within dispute window)
+- `DISPUTED → COMPLETED` (admin resolves in lab's favour — payout released)
+- `DISPUTED → REFUND_PENDING` (admin resolves in client's favour)
+
+**Files:** `prisma/schema.prisma` (new status), `src/domain/orders/state-machine.ts` (new transitions), `src/features/orders/dispute/` (client initiation slice), `src/features/orders/dispute-resolution/` (admin resolution slice), T-10 payout handler (gate: do not release payout if Order is DISPUTED)
+
+**Acceptance criteria:**
+- Client can dispute a COMPLETED order within a configurable window (e.g. 7 days)
+- Disputing an order blocks payout release for that order
+- ADMIN can resolve the dispute in either direction
+- All transitions call `isValidStatusTransition()` before writing `Order.status`
+- ITA-compliant response time SLA is documented (even if not yet enforced in code)
+
+---
+
+### T-20 — RA 10173 privacy compliance `[planner]`
+**Branch:** `feat/T20-privacy-compliance`
+**Status:** blocked by T-05 (ClientProfile collection)
+**Why planner:** Republic Act 10173 (Data Privacy Act) requires explicit informed consent at the point of personal data collection, a stated purpose, and data subject rights. Chemical and clinical test data is sensitive personal information under NPC guidelines. Plan must identify all collection points, define the consent notice text (legal review required), and specify data retention and deletion handling.
+
+**Scope:**
+- **Consent notice** at ClientProfile collection (create-order form) — explicit checkbox, purpose statement
+- **Privacy notice page** at `/privacy` linked from all data collection forms
+- **Sensitive data flag** on orders involving `CHEMICAL_TESTING` or `BIOLOGICAL_TESTING` categories — API routes serving these results must confirm NPC-compliant encryption in transit (HTTPS already enforced by Neon + Vercel; document this)
+- **Data subject rights** — email-based deletion request flow (can be manual process initially, documented in admin runbook)
+
+**Files:** `src/features/orders/create-order/ui.tsx` (consent checkbox), `src/app/privacy/page.tsx` (privacy notice), `src/lib/auth.ts` (privacy notice acceptance flag on session if required)
+
+**Acceptance criteria:**
+- ClientProfile collection form includes a consent checkbox that is required before submission
+- Consent checkbox links to the privacy notice page
+- Privacy notice correctly identifies data controller, purpose, and NPC contact
+- Orders involving chemical or clinical test categories are flagged in the DB for retention policy enforcement
+
+---
+
+## Phase 4 — Future / Post-Scale
+
+These items are identified from the four-phase regulatory/business document but are
+too distant to specify as tickets. Revisit when T-09–T-20 are complete.
+
+| Item | Description |
+|------|-------------|
+| LIMS integration | Connect to lab LIMS (Scispot, QT9) for ISO 17025 traceability. Quotation-first project data flows directly into lab testing workflows. |
+| ERP integration | SAP / NetSuite connectors for corporate clients to generate POs from PipetGo. Reduces maverick spending, enables enterprise adoption. |
+| Supply chain financing | Early payouts to labs at a fee, funded by PipetGo using mature transaction data as credit signal. Requires BSP regulatory assessment. |
 
 ---
 
