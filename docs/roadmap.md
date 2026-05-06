@@ -5,6 +5,48 @@ Status: `done` | `ready` (unblocked) | `blocked` (dependency not done)
 Workflow: `[planner]` = requires explore → plan → /clear → execute sequence before implementation.
          No tag = implement directly (pattern is clear, single slice, no financial risk).
 
+## Architecture Decisions
+
+Resolved decisions that affect multiple tickets. Read before planning any payment slice.
+
+### AD-001 — Money routing model: Direct Payment (resolved 2026-05-06)
+
+**Decision:** Direct Payment model for launch. Client pays lab directly via Xendit
+Managed Sub-Accounts. Xendit automatically splits PipetGo's commission to PipetGo's
+account at settlement. PipetGo is never the payor to the lab.
+
+**Consequences for the codebase:**
+
+| Location | Change required |
+|---|---|
+| `processPaymentCapture` (handlers.ts) | Remove `LabWallet.pendingBalance` credit — the lab already has the money via sub-account split. This is a known inconsistency with the current code; fix is scoped to T-09. |
+| Checkout action (action.ts) | Switch from PipetGo's Xendit invoice to a sub-account invoice targeting the lab's Managed Sub-Account. Commission split percentage configured at invoice creation. |
+| `Payout` model | Repurpose as commission settlement record (PipetGo's received commission per order), not a disbursement record (PipetGo paying the lab). |
+| `LabWallet` model | Repurpose as PipetGo commission ledger (commissions received per lab), not a lab escrow ledger. `pendingBalance` = commission confirmed but not yet settled by Xendit; `availableBalance` = settled commission. |
+| T-09 | Implements commission record creation on order completion, not payout disbursement. |
+| T-10 | Handles Xendit split-settlement webhook confirming commission received, not a disbursement webhook. |
+
+**What is explicitly deferred:**
+- BIR 1% creditable withholding tax slice — only required when PipetGo becomes the
+  payor (aggregator model). No engineering work until aggregator migration.
+- BIR withholding agent registration — legal/admin prerequisite for aggregator switch.
+
+**What is NOT deferred (legal, not a code ticket):**
+- PipetGo's own VAT on commission income (12% if VAT-registered) — tracked via
+  accounting export from transaction data from first commercial transaction.
+- BIR Form 2303 registration for PipetGo as a business — legal prerequisite before
+  first commercial revenue regardless of model.
+- Official receipts for PipetGo commission invoices to labs — can be issued manually
+  or via a lightweight PDF slice at early commercial stage.
+
+**Migration path to aggregator at scale:**
+When transaction volume justifies it, switching to aggregator requires: (1) updating
+the checkout action to use PipetGo's main account instead of sub-accounts, (2)
+restoring `processPaymentCapture` LabWallet credit as escrow, (3) implementing the
+withholding deduction slice in T-09/T-10, and (4) BIR withholding agent registration.
+The schema fields (`pendingBalance`, `grossAmount`, `platformFee`, `netAmount`)
+survive the migration — only their business semantics change.
+
 ## Dependency tree
 
 ```
@@ -18,8 +60,8 @@ T-01 Auth providers                        [ready] [planner]
     ├── T-07 Quote flow                    [blocked: T-06, T-03] [planner]
     └── T-08 Payment failure retry         [blocked: T-06] [planner]
 
-T-09 Payout creation on completion         [ready — lab-fulfillment done] [planner]
-└── T-10 Payout disbursement webhook       [blocked: T-09] [planner]
+T-09 Commission record on completion       [ready — lab-fulfillment done] [planner]
+└── T-10 Commission settlement webhook     [blocked: T-09] [planner]
     └── T-11 Lab wallet dashboard          [blocked: T-10]
 
 T-12 Attachment uploads                    [blocked: T-06, storage decision] [planner]
@@ -186,47 +228,49 @@ action creates a new Xendit invoice and transitions back to `PAYMENT_PENDING`.
 
 ---
 
-### T-09 — Payout creation on order completion `[planner]`
-**Branch:** `feat/T09-payout-creation`
+### T-09 — Commission record on order completion `[planner]`
+**Branch:** `feat/T09-commission-record`
 **Status:** ready (lab-fulfillment done)
-**Why planner:** Modifies the existing production `completeOrder` action. Fee arithmetic must use `Decimal` throughout (no float intermediate). The plan must decide where the platform fee constant lives (domain kernel vs env config), whether the Payout write belongs inside the existing `$transaction` or as a follow-on, and ensure `LabWallet.pendingBalance` is not double-credited.
+**Routing model:** Direct Payment (AD-001)
+**Why planner:** Modifies the existing production `completeOrder` action and `processPaymentCapture`. Two changes in one ticket: (1) remove the `LabWallet.pendingBalance` credit in `processPaymentCapture` — that write is wrong under the direct model since the lab already received the money via Xendit sub-account split; (2) create a `Payout` commission record when `completeOrder` fires. Fee arithmetic must use `Decimal` throughout. Plan must confirm Xendit sub-account split percentage config and where the commission rate constant lives.
 
-**Prerequisite decision (resolve before planning):** Choose the money routing model:
-- **Aggregator model** (current architecture): client pays PipetGo → PipetGo disburses to lab net of platform fee. PipetGo is the merchant of record; BIR withholding agent obligations apply.
-- **Direct payment model**: client pays lab directly through the gateway; PipetGo invoices the lab separately for its commission. Avoids withholding agent complexity but requires separate commission collection infrastructure.
+Under the direct payment model (AD-001), Xendit splits PipetGo's commission
+automatically at settlement. When `completeOrder` fires (`IN_PROGRESS → COMPLETED`),
+create a `Payout` record representing PipetGo's confirmed commission for that order.
+`LabWallet.pendingBalance` tracks commission received by PipetGo per lab (not lab escrow).
 
-The choice materially changes what T-09 and T-10 implement. Resolve with legal counsel before writing the plan.
-
-When `completeOrder` action fires (`IN_PROGRESS → COMPLETED`), create a
-`Payout` record (`QUEUED`) with `grossAmount = Transaction.amount`,
-`platformFee = grossAmount * feePercentage`, `netAmount = gross - fee`.
-Platform fee percentage is a config constant for now.
-
-**Files:** `src/features/orders/lab-fulfillment/` (modify `completeOrder`),
-`src/domain/payments/` (add fee constant or pricing fn)
+**Files:** `src/features/payments/webhooks/handlers.ts` (remove LabWallet credit),
+`src/features/orders/lab-fulfillment/` (modify `completeOrder` to write commission Payout),
+`src/domain/payments/` (add commission rate constant)
 
 **Acceptance criteria:**
-- `Payout` row created inside the same `$transaction` as the Order update
-- `LabWallet.pendingBalance` unchanged (already credited at capture)
-- Fee arithmetic uses `Decimal`, not float
+- `processPaymentCapture` no longer writes to `LabWallet` (removed)
+- `Payout` commission record created inside the same `$transaction` as the Order COMPLETED update
+- `Payout.grossAmount` = `Transaction.amount`, `platformFee` = gross × commission rate, `netAmount` = gross − fee
+- All fee arithmetic uses `Decimal`, no float intermediates
+- Existing webhook integration tests updated to reflect removal of LabWallet credit
 
 ---
 
-### T-10 — Payout disbursement webhook `[planner]`
-**Branch:** `feat/T10-payout-disbursement`
+### T-10 — Commission settlement webhook `[planner]`
+**Branch:** `feat/T10-commission-settlement`
 **Status:** blocked by T-09
-**Why planner:** New webhook slice with financial atomicity requirements (`availableBalance += netAmount`, `pendingBalance -= netAmount` in one `$transaction`), idempotency guard pattern, and the balance-never-negative invariant. Also the first use of the payout provider's webhook auth mechanism — decisions about HMAC vs token must be documented and consistent with T-14's normalization pattern.
+**Routing model:** Direct Payment (AD-001)
+**Why planner:** New webhook slice from Xendit confirming commission split has settled into PipetGo's account. Financial atomicity required (`LabWallet.availableBalance += netAmount`, `pendingBalance -= netAmount`), idempotency guard, and balance-never-negative invariant. Must follow T-14's `NormalizedWebhookPayload` pattern and T-16's idempotency key table if that is implemented first.
 
-External payout provider (Xendit disbursement) webhook marks `Payout.status =
-COMPLETED`. Handler increments `LabWallet.availableBalance` by `Payout.netAmount`
-and decrements `pendingBalance` by the same amount atomically.
+Under the direct payment model, Xendit fires a settlement webhook when the commission
+split completes. This handler marks `Payout.status = COMPLETED` and moves the amount
+from `LabWallet.pendingBalance` to `availableBalance` in PipetGo's commission ledger.
+`LabWallet` here tracks PipetGo's commission income per lab, not lab escrow (AD-001).
 
-**Files:** `src/features/payments/payouts/` (new slice)
+**Files:** `src/features/payments/payouts/` (new slice), `src/app/api/webhooks/xendit-settlement/route.ts`
 
 **Acceptance criteria:**
+- `Payout.status` updated to `COMPLETED` atomically with `LabWallet` balance move
 - `availableBalance += netAmount`, `pendingBalance -= netAmount` in one `$transaction`
-- Idempotency guard on `Payout.status === COMPLETED`
+- Idempotency guard prevents double-credit on duplicate Xendit delivery
 - `LabWallet` balances never go negative (throw if they would)
+- Webhook auth uses HMAC or token per Xendit settlement webhook spec (document in plan)
 
 ---
 
