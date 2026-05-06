@@ -9,6 +9,26 @@ Workflow: `[planner]` = requires explore → plan → /clear → execute sequenc
 
 Resolved decisions that affect multiple tickets. Read before planning any payment slice.
 
+### AD-002 — Payment processor strategy: multi-processor hybrid (pending one verification)
+
+**Research conclusion (2026-05-06):** `docs/research/Payment-Processor-eval-PipetGo.md`
+
+Eliminated outright: **Maya Business** (no HMAC, IP-whitelist-only webhooks, broken sandbox) and **DragonPay** (XML/SOAP legacy APIs, RSA key pairs, incompatible with modern TS stack).
+
+**Recommended hybrid:**
+- **Inbound capture (checkout + webhooks):** Migrate to PayMongo. Timestamp-bound HMAC-SHA256 is best-in-class; Checkout API is modern and sandbox is deterministic (specific card/OTP codes trigger exact failure states). PayMongo preferential card rate (3.125% + PHP 13.39) applies once BIR Form 2303 is registered.
+- **Outbound disbursements:** Retain Xendit. Bank Account Name Validator API pre-validates lab bank routing before transfer, eliminating bounce fees and manual reconciliation overhead. No other provider offers an equivalent.
+- **HitPay:** Strong cost-optimization fallback (QR Ph at 1.0%, cards ~3%). Viable alternative to PayMongo for inbound if PayMongo sub-merchant support is confirmed absent. Suitable candidate once T-14 normalization is in place.
+
+**Blocking question before migrating inbound to PayMongo (verify before writing T-14 plan):**
+The direct payment model (AD-001) uses Xendit Managed Sub-Accounts for automatic payment splitting to lab sub-accounts. PayMongo must support an equivalent sub-merchant or split-payment mechanism for this model to work with PayMongo on the inbound side. If PayMongo does not support this, inbound capture must stay on Xendit until switching to the aggregator model — at which point the PayMongo migration is straightforward.
+
+**Consequence for T-14:** Scope expanded — the normalization layer must abstract both the webhook payload shape AND the auth mechanism (static token vs. HMAC-SHA256 + timestamp). Switching from Xendit to PayMongo on the inbound side must require only a new provider file + route, with no changes to handlers.ts or the domain layer.
+
+**Xendit static token risk assessment:** Mitigated at current scale by TLS + `$transaction`-bounded idempotency guard. T-16 (idempotency key table) closes the remaining concurrent-delivery window. Acceptable until PayMongo sub-merchant compatibility is confirmed and migration is planned.
+
+---
+
 ### AD-001 — Money routing model: Direct Payment (resolved 2026-05-06)
 
 **Decision:** Direct Payment model for launch. Client pays lab directly via Xendit
@@ -316,15 +336,13 @@ Lab verification (`isVerified`), user role management, order oversight.
 ### T-14 — Payment provider normalization `[planner]`
 **Branch:** `feat/T14-payment-provider-normalization`
 **Status:** ready (refactor, no feature dependencies)
-**Why planner:** Cross-cutting refactor across `src/lib/payments/`, `src/features/payments/webhooks/`, and `src/domain/payments/`. The plan must define the exact shape of `NormalizedWebhookPayload`, the location of the normalizer function, and confirm that existing webhook tests pass without modification after the type boundary moves.
+**Why planner:** Cross-cutting refactor across `src/lib/payments/`, `src/features/payments/webhooks/`, and `src/domain/payments/`. The plan must define `NormalizedWebhookPayload`, the webhook auth abstraction interface, the location of per-provider verifier functions, and confirm that existing webhook tests pass without modification after the boundary moves.
 
-The current webhook handler (`processPaymentCapture`) accepts `XenditInvoicePayload`
-directly — Xendit's raw payload shape leaks into the business logic layer. Adding a
-second payment processor (HitPay, PayMongo, etc.) would require either duplicating the
-handler or casting a foreign payload to Xendit's type.
+**Scope (expanded per AD-002):** The normalization layer must abstract two things, not one:
+1. **Payload shape** — `XenditInvoicePayload` must not leak into `handlers.ts`
+2. **Webhook auth mechanism** — static token (Xendit) vs. HMAC-SHA256 + timestamp (PayMongo) must be swappable per provider without touching `handlers.ts`. Each provider's route owns its own auth verification.
 
-**The fix:** introduce a provider-neutral internal type and move all provider-specific
-mapping into each provider's route before it reaches the handler.
+The goal: migrating from Xendit to PayMongo on the inbound side requires only adding `src/lib/payments/paymongo.ts` + `src/features/payments/webhooks/paymongo/route.ts`. Zero changes to `handlers.ts` or `src/domain/`.
 
 **Files to create:**
 - `src/lib/payments/types.ts` — `NormalizedWebhookPayload` interface:
@@ -335,31 +353,28 @@ mapping into each provider's route before it reaches the handler.
     paymentMethod?: string
   }
   ```
+- `src/lib/payments/webhook-auth.ts` — per-provider verifier functions:
+  ```ts
+  export function verifyXenditToken(req: NextRequest, secret: string): boolean
+  export function verifyPayMongoHmac(rawBody: string, header: string, secret: string): boolean
+  export function verifyHitPayHmac(rawBody: string, header: string, salt: string): boolean
+  ```
 
 **Files to modify:**
-- `src/features/payments/webhooks/types.ts` — keep `XenditInvoicePayload` for
-  parsing the raw request body; add a `normalizeXenditPayload(payload: XenditInvoicePayload): NormalizedWebhookPayload` function
-- `src/features/payments/webhooks/route.ts` — call `normalizeXenditPayload` after
-  parsing; pass `NormalizedWebhookPayload` to `processPaymentCapture`
-- `src/features/payments/webhooks/handlers.ts` — change signature to accept
-  `NormalizedWebhookPayload` instead of `XenditInvoicePayload`; remove
-  `XenditInvoicePayload` import
-- `src/domain/payments/events.ts` — fix stale "PayMongo" references in JSDoc
-  (project uses Xendit; these are copy-paste artifacts from original design)
+- `src/features/payments/webhooks/types.ts` — keep `XenditInvoicePayload` for raw body parsing; add `normalizeXenditPayload()` returning `NormalizedWebhookPayload`
+- `src/features/payments/webhooks/route.ts` — use `verifyXenditToken()` from `webhook-auth.ts`; call `normalizeXenditPayload`; pass normalized payload to `processPaymentCapture`
+- `src/features/payments/webhooks/handlers.ts` — accept `NormalizedWebhookPayload`; remove `XenditInvoicePayload` import
+- `src/domain/payments/events.ts` — fix stale "PayMongo" JSDoc references
 - `src/domain/payments/CLAUDE.md` — same stale reference fix
 
 **Acceptance criteria:**
-- `processPaymentCapture` imports nothing from `XenditInvoicePayload` or any
-  provider-specific type
-- `src/features/payments/webhooks/route.ts` is the only file that references
-  `XenditInvoicePayload` (mapping happens at the boundary)
-- `npx tsc --noEmit` passes; existing webhook tests pass without modification
-- Adding a second provider (`src/lib/payments/hitpay.ts` + new route) requires
-  no changes to `handlers.ts` or `src/domain/`
+- `processPaymentCapture` imports no provider-specific type
+- `route.ts` is the only file referencing `XenditInvoicePayload`
+- `verifyXenditToken`, `verifyPayMongoHmac`, `verifyHitPayHmac` all implemented in `webhook-auth.ts` (even if only Xendit route is wired — others are ready to use)
+- `npx tsc --noEmit` passes; existing webhook integration tests pass unchanged
+- Adding a PayMongo route requires only a new route file + `paymongo.ts` provider client; zero changes to `handlers.ts` or `src/domain/`
 
-**Note:** Do not introduce a `PaymentProvider` interface or factory pattern — that
-abstraction is YAGNI until a second provider is actually being added. The normalized
-type alone is sufficient to decouple the boundary.
+**Note:** Do not introduce a `PaymentProvider` interface or factory — YAGNI. The normalized type + per-provider verifier functions are sufficient.
 
 ---
 
