@@ -22,6 +22,12 @@ declare module '@auth/core/adapters' {
   }
 }
 
+declare module '@auth/core/jwt' {
+  interface JWT {
+    role?: UserRole
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [Google({})],
@@ -41,12 +47,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!token.role) {
         throw new Error('JWT token missing role — auth misconfiguration')
       }
+      if (!token.sub) {
+        throw new Error('JWT token missing sub — auth misconfiguration')
+      }
       return {
         ...session,
         user: {
           ...session.user,
-          id: token.sub ?? '',
-          role: token.role as UserRole,
+          id: token.sub,
+          role: token.role,
         },
       }
     },
