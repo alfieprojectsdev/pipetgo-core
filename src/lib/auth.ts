@@ -32,14 +32,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [Google({})],
   session: { strategy: 'jwt' },
-  trustHost: true,
+  trustHost: process.env.AUTH_TRUST_HOST === 'true',
   pages: {
     signIn: '/auth/signin',
   },
   callbacks: {
-    jwt({ token, user }) {
+    async jwt({ token, user }) {
       if (user) {
         token.role = user.role ?? UserRole.CLIENT
+      } else if (token.sub) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.sub },
+          select: { role: true },
+        })
+        if (dbUser) token.role = dbUser.role
       }
       return token
     },
