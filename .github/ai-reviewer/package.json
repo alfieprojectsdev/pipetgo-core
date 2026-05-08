@@ -1,0 +1,15 @@
+{
+  "name": "ai-reviewer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "review": "node index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.1",
+    "@octokit/rest": "^22.0.1",
+    "dotenv": "^17.4.2",
+    "zod": "^4.4.3"
+  }
+}
