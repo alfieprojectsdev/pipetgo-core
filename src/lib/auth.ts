@@ -32,7 +32,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [Google({})],
   session: { strategy: 'jwt' },
-  trustHost: process.env.AUTH_TRUST_HOST === 'true',
+  trustHost: true,
   pages: {
     signIn: '/auth/signin',
   },
