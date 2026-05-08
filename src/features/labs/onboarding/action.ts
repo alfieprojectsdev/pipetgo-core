@@ -45,21 +45,26 @@ export async function registerLab(
 
   const { name, description, city, country } = parsed.data
 
-  await prisma.$transaction([
-    prisma.lab.create({
-      data: {
-        ownerId: session.user.id,
-        name,
-        description,
-        location: { city, country },
-        certifications: [],
-      },
-    }),
-    prisma.user.update({
-      where: { id: session.user.id },
-      data: { role: UserRole.LAB_ADMIN },
-    }),
-  ])
+  try {
+    await prisma.$transaction([
+      prisma.lab.create({
+        data: {
+          ownerId: session.user.id,
+          name,
+          description,
+          location: { city, country },
+          certifications: [],
+        },
+      }),
+      prisma.user.update({
+        where: { id: session.user.id },
+        data: { role: UserRole.LAB_ADMIN },
+      }),
+    ])
+  } catch {
+    return { message: 'Registration failed. Please try again.' }
+  }
 
+  // redirect() throws NEXT_REDIRECT internally — must be outside try/catch
   redirect('/dashboard/lab')
 }
