@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { PricingMode, ServiceCategory } from '@prisma/client'
+import { PricingMode, ServiceCategory, UserRole } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 
@@ -19,12 +19,24 @@ const serviceSchema = z
     if (
       (data.pricingMode === PricingMode.FIXED ||
         data.pricingMode === PricingMode.HYBRID) &&
-      (!data.pricePerUnit || isNaN(parseFloat(data.pricePerUnit)))
+      (!data.pricePerUnit ||
+        isNaN(parseFloat(data.pricePerUnit)) ||
+        parseFloat(data.pricePerUnit) <= 0)
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['pricePerUnit'],
-        message: 'Price is required for FIXED and HYBRID services.',
+        message: 'Price must be greater than 0 for FIXED and HYBRID services.',
+      })
+    }
+    if (
+      data.pricingMode === PricingMode.QUOTE_REQUIRED &&
+      data.pricePerUnit
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pricePerUnit'],
+        message: 'Price must be empty for QUOTE_REQUIRED services.',
       })
     }
   })
@@ -35,7 +47,8 @@ export type ServiceFormState = {
 }
 
 async function resolveOwnedLab(userId: string) {
-  return prisma.lab.findFirst({ where: { ownerId: userId } })
+  const labs = await prisma.lab.findMany({ where: { ownerId: userId } })
+  return labs.length === 1 ? labs[0] : null
 }
 
 export async function createService(
@@ -44,6 +57,7 @@ export async function createService(
 ): Promise<ServiceFormState> {
   const session = await auth()
   if (!session?.user.id) redirect('/auth/signin')
+  if (session.user.role !== UserRole.LAB_ADMIN) return { message: 'Forbidden.' }
 
   const parsed = serviceSchema.safeParse({
     name: formData.get('name'),
@@ -88,6 +102,7 @@ export async function updateService(
 ): Promise<ServiceFormState> {
   const session = await auth()
   if (!session?.user.id) redirect('/auth/signin')
+  if (session.user.role !== UserRole.LAB_ADMIN) return { message: 'Forbidden.' }
 
   const serviceId = formData.get('serviceId')
   if (typeof serviceId !== 'string' || !serviceId) {
@@ -142,6 +157,7 @@ export async function toggleServiceActive(
 ): Promise<ServiceFormState> {
   const session = await auth()
   if (!session?.user.id) redirect('/auth/signin')
+  if (session.user.role !== UserRole.LAB_ADMIN) return { message: 'Forbidden.' }
 
   const serviceId = formData.get('serviceId')
   if (typeof serviceId !== 'string' || !serviceId) {
