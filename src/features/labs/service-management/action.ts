@@ -20,8 +20,8 @@ const serviceSchema = z
       (data.pricingMode === PricingMode.FIXED ||
         data.pricingMode === PricingMode.HYBRID) &&
       (!data.pricePerUnit ||
-        isNaN(parseFloat(data.pricePerUnit)) ||
-        parseFloat(data.pricePerUnit) <= 0)
+        !Number.isFinite(Number(data.pricePerUnit)) ||
+        Number(data.pricePerUnit) <= 0)
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -137,7 +137,7 @@ export async function updateService(
       where: { id: serviceId },
       data: {
         name,
-        description,
+        description: description ?? null,
         category,
         pricingMode,
         pricePerUnit: pricePerUnit ?? null,
@@ -167,16 +167,13 @@ export async function toggleServiceActive(
   const lab = await resolveOwnedLab(session.user.id)
   if (!lab) return { message: 'No lab found for this account.' }
 
-  const service = await prisma.labService.findUnique({ where: { id: serviceId } })
+  const service = await prisma.labService.findUnique({ where: { id: serviceId }, select: { labId: true } })
   if (!service || service.labId !== lab.id) {
     return { message: 'Service not found or access denied.' }
   }
 
   try {
-    await prisma.labService.update({
-      where: { id: serviceId },
-      data: { isActive: !service.isActive },
-    })
+    await prisma.$executeRaw`UPDATE "LabService" SET "isActive" = NOT "isActive" WHERE id = ${serviceId}`
   } catch {
     return { message: 'Failed to update service. Please try again.' }
   }

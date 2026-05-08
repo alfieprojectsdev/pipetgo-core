@@ -89,13 +89,13 @@ function ServiceForm({
       <div>
         <label htmlFor="name">Service name</label>
         <input id="name" name="name" defaultValue={defaults?.name} required />
-        {state.errors?.name && <p>{state.errors.name[0]}</p>}
+        {state.errors?.name && <p role="alert">{state.errors.name[0]}</p>}
       </div>
 
       <div>
         <label htmlFor="description">Description</label>
         <textarea id="description" name="description" defaultValue={defaults?.description} />
-        {state.errors?.description && <p>{state.errors.description[0]}</p>}
+        {state.errors?.description && <p role="alert">{state.errors.description[0]}</p>}
       </div>
 
       <div>
@@ -107,7 +107,7 @@ function ServiceForm({
             </option>
           ))}
         </select>
-        {state.errors?.category && <p>{state.errors.category[0]}</p>}
+        {state.errors?.category && <p role="alert">{state.errors.category[0]}</p>}
       </div>
 
       <div>
@@ -119,7 +119,7 @@ function ServiceForm({
             </option>
           ))}
         </select>
-        {state.errors?.pricingMode && <p>{state.errors.pricingMode[0]}</p>}
+        {state.errors?.pricingMode && <p role="alert">{state.errors.pricingMode[0]}</p>}
       </div>
 
       <div>
@@ -132,13 +132,13 @@ function ServiceForm({
           min="0"
           defaultValue={defaults?.pricePerUnit}
         />
-        {state.errors?.pricePerUnit && <p>{state.errors.pricePerUnit[0]}</p>}
+        {state.errors?.pricePerUnit && <p role="alert">{state.errors.pricePerUnit[0]}</p>}
       </div>
 
       <div>
         <label htmlFor="unit">Unit</label>
         <input id="unit" name="unit" defaultValue={defaults?.unit} />
-        {state.errors?.unit && <p>{state.errors.unit[0]}</p>}
+        {state.errors?.unit && <p role="alert">{state.errors.unit[0]}</p>}
       </div>
 
       <button type="submit" disabled={pending}>
