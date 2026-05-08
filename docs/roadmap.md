@@ -70,9 +70,9 @@ survive the migration — only their business semantics change.
 ## Dependency tree
 
 ```
-T-01 Auth providers                        [ready] [planner]
-├── T-02 Lab onboarding                    [blocked: T-01]
-│   └── T-03 Lab service management        [blocked: T-02]
+T-01 Auth providers                        [done] [planner]
+├── T-02 Lab onboarding                    [done]
+│   └── T-03 Lab service management        [PR #3]
 │       └── T-04 Service marketplace       [blocked: T-03]
 │           └── T-05 ClientProfile on      [blocked: T-04] [planner]
 │                    create-order
@@ -101,6 +101,86 @@ T-19 Dispute and redress mechanism        [blocked: T-06, schema migration] [pla
     (ITA 2023 internal redress requirement)
 T-20 RA 10173 privacy compliance          [blocked: T-05] [planner]
 ```
+
+---
+
+## Implementation timeline
+
+Projected from **2026-05-08** (T-01/T-02 merged, T-03 in PR).
+
+### Session budget assumptions (Claude Pro $20/month)
+
+- Rate-limit window resets roughly every 5 hours; realistic pace is 2–3 focused implementation sessions per day before throttling.
+- **Simple ticket (no `[planner]`):** 1 session — write plan file + implement + open PR.
+- **`[planner]` ticket:** 2 sessions — session 1: explore + plan skill + write plan file; `/clear`; session 2: implement + open PR.
+- **Complex `[planner]` ticket** (T-12, T-14, T-17, T-18, T-19): 3 sessions — heavier research or cross-cutting scope.
+- Assumes ~3–4 working days/week on this project.
+
+### Phase 1 — Core user flows (target: week of 2026-05-11)
+
+Unblocked immediately or by T-03 merge. All directly implementable (no `[planner]`).
+
+| Ticket | Blocker clears | Sessions | Notes |
+|--------|----------------|----------|-------|
+| T-03 merge | — | — | PR #3 open today |
+| T-04 Service marketplace | T-03 merge | 1 | Public browse, no auth required |
+| T-06 Order detail page (client) | T-01 ✅ | 1 | Already unblocked |
+| T-16 Idempotency key table | ready now | 1 | Schema migration + handler patch |
+
+**End state:** Lab-side and client-side read flows exist. T-07's second blocker (T-03) is cleared.
+
+### Phase 2 — Transactional flows (target: 2026-05-18 → 2026-05-25)
+
+All `[planner]` tagged; each requires a plan session, `/clear`, then implementation session.
+
+| Ticket | Blocker clears | Sessions | Notes |
+|--------|----------------|----------|-------|
+| T-05 ClientProfile on create-order | T-04 | 2 | Modifies existing production action |
+| T-07 Quote flow | T-06 + T-03 | 2 | Two sub-slices, three state transitions |
+| T-08 Payment failure retry | T-06 | 2 | Webhook failure path + retry CTA |
+| T-09 Commission record | ready now | 2 | AD-001 direct payment model |
+| T-15 Lab KYC upload | T-02 ✅ | 2 | Gateway KYC API integration |
+
+**End state:** Full order lifecycle functional (create → quote → pay → complete). Commission records written on completion.
+
+### Phase 3 — Financial + infrastructure (target: 2026-05-25 → 2026-06-08)
+
+Depends on Phase 2 completing. T-14 is the prerequisite for T-17.
+
+| Ticket | Blocker clears | Sessions | Notes |
+|--------|----------------|----------|-------|
+| T-10 Commission settlement webhook | T-09 | 2 | LabWallet balance move |
+| T-11 Lab wallet dashboard | T-10 | 1 | No `[planner]` |
+| T-14 Payment provider normalization | ready now | 3 | Complex refactor; AD-002 expanded scope |
+
+**End state:** Financial flows closed. Xendit→PayMongo migration path ready (T-14 done).
+
+### Phase 4 — Post-MVP / compliance (target: 2026-06-08 → 2026-07-06)
+
+Lower urgency. T-13 (admin panel) gates T-18.
+
+| Ticket | Blocker clears | Sessions | Notes |
+|--------|----------------|----------|-------|
+| T-13 Admin panel | T-01 ✅ | 3 | Large scope; post-MVP |
+| T-12 Attachment uploads | T-06 + storage decision | 3 | Storage provider must be selected first |
+| T-17 PESONet virtual account | T-14 | 3 | New provider; payment research gate |
+| T-18 Lab accreditation verification | T-02 ✅ + T-13 | 2 | ITA 2023 compliance |
+| T-19 Dispute and redress | T-06 + migration | 2 | ITA 2023 internal redress requirement |
+| T-20 RA 10173 privacy compliance | T-05 | 2 | DPA consent + privacy notice |
+
+**End state:** Full roadmap complete, including regulatory compliance layer.
+
+### Summary
+
+| Phase | Target window | MVP gate |
+|-------|---------------|----------|
+| 1 — Core flows | week of 2026-05-11 | |
+| 2 — Transactional | 2026-05-18 → 2026-05-25 | |
+| 3 — Financial | 2026-05-25 → 2026-06-08 | ✅ **MVP** |
+| 4 — Post-MVP | 2026-06-08 → 2026-07-06 | |
+
+**MVP (phases 1–3): ~4–5 weeks from today (target 2026-06-08).**
+The main wildcard is T-14 (payment normalization) — AD-002 expanded its scope to include auth abstraction, making it a 3-session architectural ticket. If T-14 slips, T-17 slips with it; all other tickets are on a predictable single-dependency cadence.
 
 ---
 
@@ -524,8 +604,8 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 
 ## Done
 
-| Ticket | Commit | Description |
-|--------|--------|-------------|
+| Ticket | PR / Commit | Description |
+|--------|-------------|-------------|
 | foundation | `cfbda99` | Domain kernel, Prisma schema, ESLint boundary rule |
 | create-order | — | FIXED/HYBRID order creation (ClientProfile not yet collected — see T-05) |
 | checkout | — | Xendit invoice creation |
@@ -535,3 +615,6 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | lab-wallet-credit | `5034def` | pendingBalance upsert in webhook handler |
 | client-dashboard | `9219012` | CLIENT order listing |
 | webhook-tests | `400d5ed` | Vitest integration tests for processPaymentCapture |
+| T-01 Auth providers | PR #1 `57f5e63` | Google OAuth via NextAuth v5-beta; JWT strategy; role seeding |
+| T-02 Lab onboarding | PR #2 `8531cfe` | Lab registration form; atomic Lab + LAB_ADMIN role promotion |
+| T-03 Lab service management | PR #3 (open) | CRUD for LabService; FIXED/HYBRID price validation; isActive toggle |
