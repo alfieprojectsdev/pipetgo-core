@@ -18,6 +18,6 @@ Guard: notFound() for ownership mismatch. notFound() for any status other than Q
 
 - `QuoteOrderDTO` contains no `Prisma.Decimal` or `Date` — all fields are primitives.
 - `quotedPrice` is absent from the DTO (order has no price yet at QUOTE_REQUESTED).
-- `provideQuote` sets both `quotedPrice` (Prisma.Decimal) and `quotedAt` (new Date()) atomically.
+- `provideQuote` sets both `quotedPrice` (Prisma.Decimal) and `quotedAt` (new Date()) atomically, then redirects to `/dashboard/lab` on success (same pattern as `cancelOrder`).
 - Price validation uses `Number()` not `parseFloat` — `parseFloat('1.5abc')` returns 1.5 and passes isFinite; `Number('1.5abc')` is NaN and correctly rejects partial strings.
 - Status guard (`order.status !== QUOTE_REQUESTED → notFound()`) is intentionally redundant with the dispatch page — defense-in-depth per DL-007.

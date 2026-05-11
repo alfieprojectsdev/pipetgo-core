@@ -55,7 +55,7 @@ export async function provideQuote(
   if (result !== null) return result
 
   revalidatePath('/dashboard/lab')
-  return null
+  redirect('/dashboard/lab')
 }
 
 export async function cancelOrder(
