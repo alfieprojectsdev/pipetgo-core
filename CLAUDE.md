@@ -46,3 +46,7 @@ Every plan implementation ships as a PR, not a direct push to `main`. CodeRabbit
 7. Squash-merge into `main`; delete the branch
 
 **PR title format:** `feat: {ticket slug} — {one-line description}` matching the commit style already in this repo.
+
+## Implementation Discipline
+
+- **Unhandled states must throw, never default silently.** Every unhandled enum branch, `??` fallback, `indexOf(x) === -1` coercion, `parseFloat` on untrusted input, `findFirst` on a uniqueness invariant, and missing try/catch around Prisma must `throw new Error(...)` so contract violations surface in dev rather than producing wrong output in prod. See `src/lib/auth.ts` — `throw new Error('JWT token missing role')` — as the canonical example.
