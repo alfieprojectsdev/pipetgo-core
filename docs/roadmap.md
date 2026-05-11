@@ -72,13 +72,15 @@ survive the migration — only their business semantics change.
 ```
 T-01 Auth providers                        [done] [planner]
 ├── T-02 Lab onboarding                    [done]
-│   └── T-03 Lab service management        [PR #3]
-│       └── T-04 Service marketplace       [blocked: T-03]
+│   └── T-03 Lab service management        [done]
+│       └── T-04 Service marketplace       [PR #5]
 │           └── T-05 ClientProfile on      [blocked: T-04] [planner]
 │                    create-order
-└── T-06 Order detail page (client)        [blocked: T-01]
-    ├── T-07 Quote flow                    [blocked: T-06, T-03] [planner]
+└── T-06 Order detail page (client)        [done]
+    ├── T-07 Quote flow                    [blocked: T-06, T-03, T-04.5] [planner]
     └── T-08 Payment failure retry         [blocked: T-06] [planner]
+
+T-04.5 Tailwind CSS setup                  [ready — CSS pipeline; required before T-07]
 
 T-09 Commission record on completion       [ready — lab-fulfillment done] [planner]
 └── T-10 Commission settlement webhook     [blocked: T-09] [planner]
@@ -122,12 +124,13 @@ Unblocked immediately or by T-03 merge. All directly implementable (no `[planner
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
-| T-03 merge | — | — | PR #3 open today |
-| T-04 Service marketplace | T-03 merge | 1 | Public browse, no auth required |
-| T-06 Order detail page (client) | T-01 ✅ | 1 | Already unblocked |
+| T-03 merge | — | — | ✅ done (PR #3) |
+| T-04 Service marketplace | T-03 ✅ | 1 | ✅ PR #5 open |
+| T-06 Order detail page (client) | T-01 ✅ | 1 | ✅ done (PR #4) |
+| T-04.5 Tailwind CSS setup | ready now | 1 | postcss + tailwind.config + globals.css; required before T-07 |
 | T-16 Idempotency key table | ready now | 1 | Schema migration + handler patch |
 
-**End state:** Lab-side and client-side read flows exist. T-07's second blocker (T-03) is cleared.
+**End state:** Lab-side and client-side read flows exist. T-07's blockers (T-03, T-06, T-04.5) all cleared.
 
 ### Phase 2 — Transactional flows (target: 2026-05-18 → 2026-05-25)
 
@@ -223,7 +226,7 @@ already set (or is a separate admin-triggered role grant).
 
 ### T-03 — Lab service management
 **Branch:** `feat/T03-lab-service-management`
-**Status:** blocked by T-02
+**Status:** done (PR #3)
 
 CRUD for `LabService`. Lab owner can create, edit, and deactivate services
 (name, category, pricingMode, pricePerUnit, unit, description).
@@ -239,7 +242,7 @@ CRUD for `LabService`. Lab owner can create, edit, and deactivate services
 
 ### T-04 — Service marketplace / browse
 **Branch:** `feat/T04-service-marketplace`
-**Status:** blocked by T-03
+**Status:** PR #5 open
 
 Public listing of labs and active services. Filter by `ServiceCategory`.
 Entry point for client order creation — links to `/orders/new?serviceId=...`.
@@ -250,6 +253,48 @@ Entry point for client order creation — links to `/orders/new?serviceId=...`.
 - Unauthenticated users can browse services
 - Category filter works
 - Each service card links to create-order with serviceId prefilled
+
+---
+
+### T-04.5 — Tailwind CSS setup
+**Branch:** `feat/T04.5-tailwind-setup`
+**Status:** ready (no feature dependencies)
+
+The project writes Tailwind class names throughout but has no CSS pipeline wired up.
+`tailwindcss` is not in `package.json`; there is no `tailwind.config.js`,
+`postcss.config.js`, or global CSS import in `layout.tsx`. All components render
+unstyled HTML today. This is a three-step fix: install deps, create config, import
+`globals.css` in the root layout.
+
+**Why now:** T-07 (quote flow) is the first slice a real user sees end-to-end.
+Implementing or demoing it without CSS produces an unusable UI and makes it
+impossible to catch layout bugs (overflow, z-index, responsive breakpoints) that
+are invisible when class names do nothing. Every UI-bearing ticket from T-07 onward
+assumes styles render.
+
+**Other tickets blocked on UI correctness (all require T-04.5 before demo/QA):**
+
+| Ticket | UI concern |
+|--------|-----------|
+| T-07 Quote flow | Accept/reject quote form; inline on order detail page |
+| T-08 Payment failure retry | Retry CTA visibility on order detail |
+| T-11 Lab wallet dashboard | Financial balances must be legible |
+| T-17 PESONet | Virtual account number display |
+| T-19 Dispute / redress | Dispute initiation form (ITA compliance) |
+| T-20 RA 10173 privacy | Consent checkbox must render and be usable |
+
+**Files:**
+- `package.json` — add `tailwindcss`, `postcss`, `autoprefixer` to `devDependencies`
+- `tailwind.config.js` — content paths: `./src/**/*.{ts,tsx}`, `./src/app/**/*.{ts,tsx}`
+- `postcss.config.js` — `{ plugins: { tailwindcss: {}, autoprefixer: {} } }`
+- `src/styles/globals.css` — `@tailwind base; @tailwind components; @tailwind utilities;`
+- `src/app/layout.tsx` — `import '@/styles/globals.css'`
+
+**Acceptance criteria:**
+- `npx tailwindcss --version` returns ^3.4.x
+- Tailwind utility classes render correctly in the browser (e.g. `/services` page shows card grid with colour badges)
+- `line-clamp-2` on service descriptions clamps correctly (core utility since Tailwind v3.3 — no plugin needed)
+- No existing TSC errors introduced
 
 ---
 
@@ -275,7 +320,7 @@ the same `$transaction` as the `Order` creation.
 
 ### T-06 — Order detail page (client-facing)
 **Branch:** `feat/T06-order-detail`
-**Status:** blocked by T-01
+**Status:** done (PR #4)
 
 `/dashboard/orders/[orderId]` — shows Order status, service name, lab name,
 amount, `ClientProfile` contact snapshot, and a status timeline. Client
@@ -292,7 +337,7 @@ dashboard already links here (`href` only, no page exists yet).
 
 ### T-07 — Quote flow `[planner]`
 **Branch:** `feat/T07-quote-flow`
-**Status:** blocked by T-06, T-03
+**Status:** blocked by T-06 ✅, T-03 ✅, T-04.5
 **Why planner:** Two sub-slices (lab-side provide, client-side respond), three state transitions (`QUOTE_REQUESTED→QUOTE_PROVIDED`, `QUOTE_PROVIDED→PENDING`, `QUOTE_PROVIDED→QUOTE_REJECTED`), TOCTOU guards on each, and the accept path must hand off to the existing checkout slice without coupling. Multiple non-obvious decisions about where to surface the quote UI on the order detail page.
 
 Lab-side: LAB_ADMIN sets `quotedPrice` on a `QUOTE_REQUESTED` order
@@ -617,4 +662,5 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | webhook-tests | `400d5ed` | Vitest integration tests for processPaymentCapture |
 | T-01 Auth providers | PR #1 `57f5e63` | Google OAuth via NextAuth v5-beta; JWT strategy; role seeding |
 | T-02 Lab onboarding | PR #2 `8531cfe` | Lab registration form; atomic Lab + LAB_ADMIN role promotion |
-| T-03 Lab service management | PR #3 (open) | CRUD for LabService; FIXED/HYBRID price validation; isActive toggle |
+| T-03 Lab service management | PR #3 `504300c` | CRUD for LabService; FIXED/HYBRID price validation; isActive toggle |
+| T-06 Order detail page | PR #4 `b5fef41` | Client order detail at /dashboard/orders/[orderId]; status timeline; PricingMode-aware |
