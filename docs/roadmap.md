@@ -242,7 +242,7 @@ CRUD for `LabService`. Lab owner can create, edit, and deactivate services
 
 ### T-04 — Service marketplace / browse
 **Branch:** `feat/T04-service-marketplace`
-**Status:** PR #5 open
+**Status:** done (PR #5)
 
 Public listing of labs and active services. Filter by `ServiceCategory`.
 Entry point for client order creation — links to `/orders/new?serviceId=...`.
@@ -664,3 +664,4 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | T-02 Lab onboarding | PR #2 `8531cfe` | Lab registration form; atomic Lab + LAB_ADMIN role promotion |
 | T-03 Lab service management | PR #3 `504300c` | CRUD for LabService; FIXED/HYBRID price validation; isActive toggle |
 | T-06 Order detail page | PR #4 `b5fef41` | Client order detail at /dashboard/orders/[orderId]; status timeline; PricingMode-aware |
+| T-04 Service marketplace | PR #5 `d5e35ec` | Public /services browse; category filter; order CTA links to create-order |
