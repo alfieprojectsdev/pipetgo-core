@@ -16,7 +16,7 @@ No `ui.tsx` — page is a pure RSC with no client components (no state, no forms
 
 ## Invariants
 
-- `statusBadgeConfig` is typed `Record<OrderStatus, ...>` — a missing enum value is a compile error, not a silent runtime fallback.
+- `statusBadgeConfig` is typed `Record<OrderStatus, ...>` — a missing enum value is a compile error at build time. The `??` fallback on the badge lookup is intentional deploy-safety (guards the window between a DB migration and Prisma client regeneration); do not remove it.
 - `OrderDetailDTO` fields are all primitive types (string, number, null). No `Prisma.Decimal` or `Date` crosses the RSC boundary.
 - `order.quotedPrice` serialized as `Decimal.toFixed(2)` or `null`. Null means no quote set yet; UI renders "Not yet quoted".
 - `statusBadgeConfig` is intentionally duplicated from `clients/dashboard/ui.tsx`. Cross-slice import is an ADR-001 violation; both slices own their copy.

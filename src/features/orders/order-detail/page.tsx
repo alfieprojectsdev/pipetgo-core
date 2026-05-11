@@ -5,7 +5,9 @@ import { auth } from '@/lib/auth'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 
 // Intentionally duplicated from clients/dashboard/ui.tsx — cross-slice import violates ADR-001.
-// Typed Record<OrderStatus, ...> so a missing enum value is a compile error, not a silent gap.
+// Typed Record<OrderStatus, ...> so a missing enum value is a compile error at build time.
+// The ?? on the badge lookup (below) is intentional deploy-safety: guards against the window
+// where a DB migration adds a new enum value before the Prisma client is regenerated.
 const statusBadgeConfig: Record<OrderStatus, { label: string; className: string }> = {
   [OrderStatus.QUOTE_REQUESTED]: { label: 'Quote Requested', className: 'bg-gray-100 text-gray-700' },
   [OrderStatus.QUOTE_PROVIDED]:  { label: 'Quote Provided',  className: 'bg-yellow-100 text-yellow-800' },
@@ -76,17 +78,21 @@ function getTimelineSteps(
   }
 
   if (s === OrderStatus.CANCELLED) {
-    const currentIndex = mainFlowOrder.indexOf(s)
-    const cutAt = currentIndex === -1 ? mainFlowOrder.length : currentIndex
-    return [
-      ...mainFlowOrder.slice(0, cutAt).map((step) => ({
-        id: step,
-        label: stepMeta[step]?.label ?? step,
-        date: stepMeta[step]?.date ?? null,
-        state: 'done' as const,
-      })),
-      { id: 'CANCELLED', label: 'Cancelled', date: null, state: 'current' as const },
+    // Reconstruct how far the order progressed using available date fields —
+    // the current CANCELLED status carries no history, so we infer from dates.
+    const steps: TimelineStep[] = [
+      { id: OrderStatus.QUOTE_REQUESTED, label: 'Order Submitted', date: createdAt, state: 'done' },
     ]
+    if (quotedAt) {
+      steps.push({ id: OrderStatus.QUOTE_PROVIDED, label: 'Quote Provided',  date: quotedAt, state: 'done' })
+      steps.push({ id: OrderStatus.PENDING,         label: 'Quote Accepted',  date: null,     state: 'done' })
+    }
+    if (paidAt) {
+      steps.push({ id: OrderStatus.PAYMENT_PENDING, label: 'Payment Pending', date: null,    state: 'done' })
+      steps.push({ id: OrderStatus.ACKNOWLEDGED,    label: 'Lab Acknowledged', date: paidAt, state: 'done' })
+    }
+    steps.push({ id: 'CANCELLED', label: 'Cancelled', date: null, state: 'current' })
+    return steps
   }
 
   if (s === OrderStatus.REFUND_PENDING || s === OrderStatus.REFUNDED) {
@@ -101,9 +107,19 @@ function getTimelineSteps(
 
   if (s === OrderStatus.QUOTE_REJECTED) {
     return [
+      { id: OrderStatus.QUOTE_REQUESTED, label: 'Order Submitted', date: createdAt, state: 'done' as const },
+      { id: OrderStatus.QUOTE_PROVIDED,  label: 'Quote Provided',  date: quotedAt,  state: 'done' as const },
+      { id: OrderStatus.QUOTE_REJECTED,  label: 'Quote Rejected',  date: null,      state: 'current' as const },
+    ]
+  }
+
+  if (s === OrderStatus.PAYMENT_FAILED) {
+    return [
       { id: OrderStatus.QUOTE_REQUESTED, label: 'Order Submitted',  date: createdAt, state: 'done' as const },
       { id: OrderStatus.QUOTE_PROVIDED,  label: 'Quote Provided',   date: quotedAt,  state: 'done' as const },
-      { id: OrderStatus.QUOTE_REJECTED,  label: 'Quote Rejected',   date: null,      state: 'current' as const },
+      { id: OrderStatus.PENDING,         label: 'Quote Accepted',   date: null,      state: 'done' as const },
+      { id: OrderStatus.PAYMENT_PENDING, label: 'Payment Pending',  date: null,      state: 'done' as const },
+      { id: OrderStatus.PAYMENT_FAILED,  label: 'Payment Failed',   date: null,      state: 'current' as const },
     ]
   }
 
