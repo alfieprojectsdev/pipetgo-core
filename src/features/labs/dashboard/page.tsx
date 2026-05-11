@@ -52,6 +52,8 @@ export default async function LabDashboardPage() {
       labId: lab.id,
       status: {
         in: [
+          OrderStatus.QUOTE_REQUESTED,
+          OrderStatus.QUOTE_REJECTED,
           OrderStatus.ACKNOWLEDGED,
           OrderStatus.IN_PROGRESS,
           OrderStatus.COMPLETED,

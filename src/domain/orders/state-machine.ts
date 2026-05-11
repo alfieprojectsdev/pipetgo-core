@@ -2,9 +2,9 @@
  * Exhaustive transition map for OrderStatus. Each key lists the statuses
  * reachable from that state; an empty array marks a terminal state.
  *
- * PAYMENT_PENDING is reachable from PENDING (quote approved or FIXED auto-price)
- * and from PAYMENT_FAILED (retry). COMPLETED is the only entry point to the
- * refund path. (ref: DL-006, DL-007)
+ * PAYMENT_PENDING is reachable from PENDING (FIXED auto-price) and directly from
+ * QUOTE_PROVIDED (client accepts quote). PAYMENT_FAILED retry also leads here.
+ * COMPLETED is the only entry point to the refund path. (ref: DL-006, DL-007)
  */
 import { OrderStatus } from "@prisma/client";
 
@@ -13,6 +13,7 @@ export const validStatusTransitions: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.QUOTE_PROVIDED]: [
     OrderStatus.QUOTE_REJECTED,
     OrderStatus.PENDING,
+    OrderStatus.PAYMENT_PENDING,  // direct accept path; PENDING edge retained for any future use
     OrderStatus.CANCELLED,
   ],
   [OrderStatus.QUOTE_REJECTED]: [OrderStatus.QUOTE_REQUESTED],
