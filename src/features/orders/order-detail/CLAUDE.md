@@ -8,11 +8,11 @@ Guard: Renders 404 for any order that does not belong to the authenticated clien
 
 ## Files
 
-| File       | What                                                                             | When to read                                                         |
-| ---------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `page.tsx` | Async RSC — CLIENT auth guard, ownership guard, Decimal/Date DTO, full render   | Modifying auth gate, order fetch, DTO fields, badge map, or timeline |
-
-No `ui.tsx` — page is a pure RSC with no client components (no state, no forms, no event handlers). No `action.ts` — T-06 is read-only; T-07 adds quote actions, T-08 adds payment retry.
+| File        | What                                                                             | When to read                                                         |
+| ----------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `page.tsx`  | Async RSC — CLIENT auth guard, ownership guard, Decimal/Date DTO, full render   | Modifying auth gate, order fetch, DTO fields, badge map, or timeline |
+| `ui.tsx`    | `'use client'` — `OrderDetailQuoteActions`: Accept/Reject forms with `useActionState`, rendered only when status === `QUOTE_PROVIDED` | Modifying quote action panel layout or error display |
+| `action.ts` | `acceptQuote` (QUOTE_PROVIDED→PAYMENT_PENDING direct transition, redirect to checkout), `rejectQuote` (→QUOTE_REJECTED, revalidatePath) | Modifying accept/reject transitions |
 
 ## Invariants
 
@@ -22,3 +22,7 @@ No `ui.tsx` — page is a pure RSC with no client components (no state, no forms
 - `statusBadgeConfig` is intentionally duplicated from `clients/dashboard/ui.tsx`. Cross-slice import is an ADR-001 violation; both slices own their copy.
 - `getTimelineSteps()` is a pure function — no hooks, no React imports beyond JSX, safe in RSC.
 - `clientProfile` null does not trigger `notFound()` — unlike lab-fulfillment and checkout, a client must be able to view their order at any status even if the profile snapshot is absent.
+- `acceptQuote` writes a single `PAYMENT_PENDING` update via the direct `QUOTE_PROVIDED→PAYMENT_PENDING` edge added to the state machine in T-07. It does NOT pass through `PENDING` — that is a FIXED-mode path.
+- `rejectQuote` is terminal for T-07. The `QUOTE_REJECTED→QUOTE_REQUESTED` re-request loop is T-09.
+- Client quote actions are inline (not a separate slice) because `QUOTE_PROVIDED` renders the same order summary as all other statuses plus an action panel — a dispatcher would require duplicating the base rendering or an ADR-001-violating cross-slice import.
+- `OrderDetailQuoteActions` is only rendered when `dto.status === 'QUOTE_PROVIDED' && dto.quotedPrice != null`. Both checks are intentional: the status check is the logic gate; the null check is deploy-safety.

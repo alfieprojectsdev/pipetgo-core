@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import type { LabDashboardOrderDTO } from './page'
 
-type Tab = 'Incoming' | 'Active' | 'History'
+type Tab = 'Quoting' | 'Incoming' | 'Active' | 'History'
 
 type LabDashboardUIProps = {
   orders: LabDashboardOrderDTO[]
@@ -71,23 +71,27 @@ function OrderTable({ orders }: { orders: LabDashboardOrderDTO[] }) {
 export function LabDashboardUI({ orders }: LabDashboardUIProps) {
   const [activeTab, setActiveTab] = useState<Tab>('Incoming')
 
+  const quoting = orders.filter((o) => o.status === 'QUOTE_REQUESTED')
   const incoming = orders.filter((o) => o.status === 'ACKNOWLEDGED')
   const active = orders.filter((o) => o.status === 'IN_PROGRESS')
   // History is newest-first so lab admins see the most recent completions
   // at the top. The Prisma query returns all orders oldest-first (asc) to
   // satisfy FIFO for Incoming/Active; History reverses client-side. (ref: DL-003)
   const history = orders
-    .filter((o) => o.status === 'COMPLETED' || o.status === 'CANCELLED')
+    .filter((o) => o.status === 'COMPLETED' || o.status === 'CANCELLED' || o.status === 'QUOTE_REJECTED')
     .toReversed()
 
   const tabs: { label: Tab; count: number }[] = [
+    { label: 'Quoting',  count: quoting.length },
     { label: 'Incoming', count: incoming.length },
-    { label: 'Active', count: active.length },
-    { label: 'History', count: history.length },
+    { label: 'Active',   count: active.length },
+    { label: 'History',  count: history.length },
   ]
 
   const currentOrders =
-    activeTab === 'Incoming' ? incoming : activeTab === 'Active' ? active : history
+    activeTab === 'Quoting'  ? quoting  :
+    activeTab === 'Incoming' ? incoming :
+    activeTab === 'Active'   ? active   : history
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
