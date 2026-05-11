@@ -30,7 +30,8 @@ function formatPrice(service: ServiceBrowseDTO): string {
   const price = `₱${parseFloat(service.pricePerUnit).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
   const unitSuffix = service.unit ? `/${service.unit}` : ''
   if (service.pricingMode === PricingMode.HYBRID) return `${price}${unitSuffix} or custom quote`
-  return `${price}${unitSuffix}`
+  if (service.pricingMode === PricingMode.FIXED) return `${price}${unitSuffix}`
+  throw new Error(`Unhandled PricingMode: ${service.pricingMode}`)
 }
 
 type Props = {
@@ -87,6 +88,7 @@ export function ServiceBrowseUI({ services, activeCategory }: Props) {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {services.map((service) => {
+              // ?? fallback: deploy-safety against unknown enum values arriving before next deploy (ref: DL-003)
               const badgeClass = categoryBadgeClass[service.category] ?? 'bg-gray-100 text-gray-700'
               const categoryLabel = categoryLabels[service.category] ?? service.category
               return (
@@ -106,6 +108,7 @@ export function ServiceBrowseUI({ services, activeCategory }: Props) {
                     )}
                     <div className="mt-auto">
                       <p className="mb-3 text-sm font-medium text-gray-900">{formatPrice(service)}</p>
+                      {/* T-05 must mount create-order at /orders/new reading searchParams.serviceId, not a path param */}
                       <a
                         href={`/orders/new?serviceId=${service.id}`}
                         className={cn(buttonVariants({ size: 'sm' }), 'w-full text-center')}
