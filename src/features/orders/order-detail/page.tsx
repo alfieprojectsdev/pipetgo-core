@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { OrderStatus } from '@prisma/client'
+import { OrderStatus, PricingMode } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -26,6 +26,7 @@ const statusBadgeConfig: Record<OrderStatus, { label: string; className: string 
 export type OrderDetailDTO = {
   id: string
   status: string
+  pricingMode: PricingMode
   serviceName: string
   labName: string
   quotedPrice: string | null
@@ -50,6 +51,7 @@ type TimelineStep = {
 
 function getTimelineSteps(
   status: string,
+  pricingMode: PricingMode,
   createdAt: string,
   quotedAt: string | null,
   paidAt: string | null,
@@ -91,7 +93,7 @@ function getTimelineSteps(
       steps.push({ id: OrderStatus.PAYMENT_PENDING, label: 'Payment Pending', date: null,    state: 'done' })
       steps.push({ id: OrderStatus.ACKNOWLEDGED,    label: 'Lab Acknowledged', date: paidAt, state: 'done' })
     }
-    steps.push({ id: 'CANCELLED', label: 'Cancelled', date: null, state: 'current' })
+    steps.push({ id: OrderStatus.CANCELLED, label: 'Cancelled', date: null, state: 'current' })
     return steps
   }
 
@@ -121,6 +123,31 @@ function getTimelineSteps(
       { id: OrderStatus.PAYMENT_PENDING, label: 'Payment Pending',  date: null,      state: 'done' as const },
       { id: OrderStatus.PAYMENT_FAILED,  label: 'Payment Failed',   date: null,      state: 'current' as const },
     ]
+  }
+
+  // FIXED and HYBRID orders skip the quote flow — show only steps they actually traverse.
+  if (pricingMode === PricingMode.FIXED || pricingMode === PricingMode.HYBRID) {
+    const fixedFlow: OrderStatus[] = [
+      OrderStatus.QUOTE_REQUESTED,
+      OrderStatus.PAYMENT_PENDING,
+      OrderStatus.ACKNOWLEDGED,
+      OrderStatus.IN_PROGRESS,
+      OrderStatus.COMPLETED,
+    ]
+    const fixedMeta: Partial<Record<OrderStatus, { label: string; date: string | null }>> = {
+      [OrderStatus.QUOTE_REQUESTED]: { label: 'Order Submitted',  date: createdAt },
+      [OrderStatus.PAYMENT_PENDING]: { label: 'Payment Pending',  date: null },
+      [OrderStatus.ACKNOWLEDGED]:    { label: 'Lab Acknowledged', date: paidAt },
+      [OrderStatus.IN_PROGRESS]:     { label: 'In Progress',      date: null },
+      [OrderStatus.COMPLETED]:       { label: 'Completed',        date: null },
+    }
+    const fixedIndex = fixedFlow.indexOf(s)
+    return fixedFlow.map((step, i) => ({
+      id: step,
+      label: fixedMeta[step]?.label ?? step,
+      date: fixedMeta[step]?.date ?? null,
+      state: (i < fixedIndex ? 'done' : i === fixedIndex ? 'current' : 'pending') as TimelineStep['state'],
+    }))
   }
 
   const currentIndex = mainFlowOrder.indexOf(s)
@@ -153,7 +180,7 @@ export default async function OrderDetailPage({
   const order = await prisma.order.findUnique({
     where: { id: params.orderId },
     include: {
-      service: { select: { name: true } },
+      service: { select: { name: true, pricingMode: true } },
       lab:     { select: { name: true } },
       clientProfile: true,
     },
@@ -165,6 +192,7 @@ export default async function OrderDetailPage({
   const dto: OrderDetailDTO = {
     id: order.id,
     status: order.status,
+    pricingMode: order.service.pricingMode,
     serviceName: order.service.name,
     labName: order.lab.name,
     quotedPrice: order.quotedPrice != null ? order.quotedPrice.toFixed(2) : null,
@@ -183,7 +211,7 @@ export default async function OrderDetailPage({
   const badge = statusBadgeConfig[dto.status as OrderStatus] ??
     { label: dto.status, className: 'bg-gray-100 text-gray-500' }
 
-  const timelineSteps = getTimelineSteps(dto.status, dto.createdAt, dto.quotedAt, dto.paidAt)
+  const timelineSteps = getTimelineSteps(dto.status, dto.pricingMode, dto.createdAt, dto.quotedAt, dto.paidAt)
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
