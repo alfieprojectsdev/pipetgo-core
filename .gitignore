@@ -7,8 +7,10 @@ node_modules/
 
 # Prisma
 prisma/migrations/
-/.claude
+.claude/memory/
 .claude/planner-state/
+.claude/plugins/
+.claude/settings.local.json
 
 tsconfig.tsbuildinfo
 
