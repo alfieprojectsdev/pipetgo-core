@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* V2 brand palette (diverged from V1 blue primary)
+     *
+     * V1 heritage:
+     *   primary blue  #3b82f6  (blue-500)
+     *   accent green  #10b981  (emerald-500)
+     *
+     * V2 brand:
+     *   primary green #16a34a  (green-600) — set directly in button.tsx variants
+     *   ring / focus  green-600 below — focus rings match primary action color
+     *   border        gray-200 equivalent — subtle neutral dividers
+     */
+    --border: 214.3 31.8% 91.4%;   /* gray-200 */
+    --ring: 142.1 76.2% 36.3%;     /* green-600 */
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
