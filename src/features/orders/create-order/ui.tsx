@@ -82,7 +82,7 @@ export function OrderFormShell({ service, userEmail }: OrderFormShellProps) {
 
               {service.lab.certifications.length > 0 && (
                 <div>
-                  <h4 className="font-medium text-gray-900">Certifications</h4>
+                  <h4 className="font-medium text-gray-900">Accreditations</h4>
                   <div className="flex flex-wrap gap-2 mt-1">
                     {service.lab.certifications.map((cert) => (
                       <span

@@ -443,7 +443,7 @@ Port from legacy lines 164–219 of `_legacy_v1/app/order/[serviceId]/page.tsx`.
 - Description and sample requirements sections (`font-medium text-gray-900` / `text-gray-700`)
 - Price display conditional on `pricingMode` (`text-lg font-semibold text-green-600` for FIXED)
 - Lab location — `(service.lab.location as { city?: string })?.city ?? 'Metro Manila'`
-- Certifications — `px-2 py-1 bg-green-100 text-green-800 rounded text-sm`
+- Accreditations — `px-2 py-1 bg-green-100 text-green-800 rounded text-sm`
 
 **Omit** from service card: `turnaroundDays` and `sampleRequirements` — not in V2 schema.
 
