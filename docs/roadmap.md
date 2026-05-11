@@ -80,7 +80,7 @@ T-01 Auth providers                        [done] [planner]
     ├── T-07 Quote flow                    [blocked: T-06, T-03, T-04.5] [planner]
     └── T-08 Payment failure retry         [blocked: T-06] [planner]
 
-T-04.5 Tailwind CSS setup                  [ready — CSS pipeline; required before T-07]
+T-04.5 Tailwind CSS setup                  [done — CSS pipeline; T-07 UI blocker cleared]
 
 T-09 Commission record on completion       [ready — lab-fulfillment done] [planner]
 └── T-10 Commission settlement webhook     [blocked: T-09] [planner]
@@ -337,7 +337,7 @@ dashboard already links here (`href` only, no page exists yet).
 
 ### T-07 — Quote flow `[planner]`
 **Branch:** `feat/T07-quote-flow`
-**Status:** blocked by T-06 ✅, T-03 ✅, T-04.5
+**Status:** blocked by T-06 ✅, T-03 ✅, T-04.5 ✅
 **Why planner:** Two sub-slices (lab-side provide, client-side respond), three state transitions (`QUOTE_REQUESTED→QUOTE_PROVIDED`, `QUOTE_PROVIDED→PENDING`, `QUOTE_PROVIDED→QUOTE_REJECTED`), TOCTOU guards on each, and the accept path must hand off to the existing checkout slice without coupling. Multiple non-obvious decisions about where to surface the quote UI on the order detail page.
 
 Lab-side: LAB_ADMIN sets `quotedPrice` on a `QUOTE_REQUESTED` order
@@ -665,3 +665,4 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | T-03 Lab service management | PR #3 `504300c` | CRUD for LabService; FIXED/HYBRID price validation; isActive toggle |
 | T-06 Order detail page | PR #4 `b5fef41` | Client order detail at /dashboard/orders/[orderId]; status timeline; PricingMode-aware |
 | T-04 Service marketplace | PR #5 `d5e35ec` | Public /services browse; category filter; order CTA links to create-order |
+| T-04.5 Tailwind CSS setup | PR #6 `2ffa22d` | tailwindcss ^3.4, postcss, autoprefixer; V2 green brand palette; .tailwindignore |
