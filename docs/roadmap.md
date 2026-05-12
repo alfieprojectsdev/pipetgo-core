@@ -74,7 +74,7 @@ T-01 Auth providers                        [done] [planner]
 ├── T-02 Lab onboarding                    [done]
 │   └── T-03 Lab service management        [done]
 │       └── T-04 Service marketplace       [done]
-│           └── T-05 ClientProfile on      [ready] [planner]
+│           └── T-05 ClientProfile on      [done]
 │                    create-order
 └── T-06 Order detail page (client)        [done]
     ├── T-07 Quote flow                    [done]
@@ -101,7 +101,7 @@ T-18 Lab accreditation verification       [blocked: T-02, T-13] [planner]
     (ISO 17025 / ITA solidary liability)
 T-19 Dispute and redress mechanism        [blocked: T-06, schema migration] [planner]
     (ITA 2023 internal redress requirement)
-T-20 RA 10173 privacy compliance          [blocked: T-05] [planner]
+T-20 RA 10173 privacy compliance          [ready] [planner]
 ```
 
 ---
@@ -138,7 +138,7 @@ All `[planner]` tagged; each requires a plan session, `/clear`, then implementat
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
-| T-05 ClientProfile on create-order | T-04 ✅ | 2 | Ready — T-04 blocker cleared |
+| T-05 ClientProfile on create-order | T-04 ✅ | 2 | ✅ done (foundation commit `1b23c0b`) |
 | T-07 Quote flow | T-06 ✅ + T-03 ✅ | 2 | ✅ done (PR #7) |
 | T-08 Payment failure retry | T-06 ✅ | 2 | ✅ done (PR #8) |
 | T-09 Commission record | ready now | 2 | AD-001 direct payment model |
@@ -300,7 +300,7 @@ assumes styles render.
 
 ### T-05 — ClientProfile collection on create-order `[planner]`
 **Branch:** `feat/T05-client-profile`
-**Status:** ready (T-04 ✅)
+**Status:** done (foundation commit `1b23c0b`)
 **Why planner:** Modifies existing production action. Decisions needed: transaction boundary (ClientProfile inside same `$transaction` as Order), domain schema import discipline (`clientDetailsSchema` must be the sole validator), and whether to rewrite or surgically patch the existing action and UI without breaking the FIXED-mode happy path.
 
 Enhancement to the existing `create-order` slice. The current Server Action
@@ -615,7 +615,7 @@ by default; only ADMIN can set it to `true` after reviewing submitted documents.
 
 ### T-20 — RA 10173 privacy compliance `[planner]`
 **Branch:** `feat/T20-privacy-compliance`
-**Status:** blocked by T-05 (ClientProfile collection)
+**Status:** ready (T-05 ✅)
 **Why planner:** Republic Act 10173 (Data Privacy Act) requires explicit informed consent at the point of personal data collection, a stated purpose, and data subject rights. Chemical and clinical test data is sensitive personal information under NPC guidelines. Plan must identify all collection points, define the consent notice text (legal review required), and specify data retention and deletion handling.
 
 **Scope:**
@@ -652,7 +652,7 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | Ticket | PR / Commit | Description |
 |--------|-------------|-------------|
 | foundation | `cfbda99` | Domain kernel, Prisma schema, ESLint boundary rule |
-| create-order | — | FIXED/HYBRID order creation (ClientProfile not yet collected — see T-05) |
+| T-05 ClientProfile on create-order | foundation `1b23c0b` | clientDetailsSchema validation, all five contact fields, atomic Order + ClientProfile $transaction |
 | checkout | — | Xendit invoice creation |
 | webhook | `fb7e1c1` | Payment capture, idempotency, LabWallet pendingBalance credit |
 | lab-fulfillment | `9f0785e` | ACKNOWLEDGED→IN_PROGRESS→COMPLETED |
