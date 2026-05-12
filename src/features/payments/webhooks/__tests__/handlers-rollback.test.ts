@@ -6,7 +6,7 @@ const mockTxUpdate = vi.fn().mockResolvedValue({})
 const mockTxOrderFindUnique = vi.fn().mockResolvedValue({ id: 'mock-order-id', labId: 'mock-lab-id', status: OrderStatus.PAYMENT_PENDING })
 const mockTxOrderUpdate = vi.fn().mockRejectedValue(new Error('order update failure'))
 const mockTxLabWalletUpsert = vi.fn().mockRejectedValue(new Error('wallet failure'))
-const mockTxTransactionFindFirst = vi.fn().mockResolvedValue({
+const mockTxTransactionFindUnique = vi.fn().mockResolvedValue({
   id: 'mock-tx-id',
   externalId: 'xendit-mock-ext',
   orderId: 'mock-order-id',
@@ -16,7 +16,7 @@ const mockTxTransactionFindFirst = vi.fn().mockResolvedValue({
 
 const mockTx = {
   transaction: {
-    findFirst: mockTxTransactionFindFirst,
+    findUnique: mockTxTransactionFindUnique,
     update: mockTxUpdate,
   },
   order: {

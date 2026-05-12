@@ -26,7 +26,8 @@ import type { XenditInvoicePayload } from './types'
 export async function processPaymentCapture(payload: XenditInvoicePayload): Promise<void> {
   await prisma.$transaction(async (tx) => {
     // Lookup by externalId (Xendit invoice ID), not Transaction.id (our cuid). (ref: DL-004)
-    const transaction = await tx.transaction.findFirst({
+    // findUnique enforces the @unique constraint at query level (Implementation Discipline).
+    const transaction = await tx.transaction.findUnique({
       where: { externalId: payload.id },
     })
 
@@ -103,7 +104,8 @@ export async function processPaymentFailed(payload: XenditInvoicePayload): Promi
   console.info(`[processPaymentFailed] enter id=${payload.id} status=${payload.status}`)
 
   await prisma.$transaction(async (tx) => {
-    const transaction = await tx.transaction.findFirst({
+    // findUnique enforces the @unique constraint at query level (Implementation Discipline).
+    const transaction = await tx.transaction.findUnique({
       where: { externalId: payload.id },
     })
 
