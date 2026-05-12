@@ -118,6 +118,15 @@ export async function processPaymentFailed(payload: XenditInvoicePayload): Promi
       return
     }
 
+    if (transaction.status === TransactionStatus.CAPTURED) {
+      // PAID-then-EXPIRED concurrent delivery: refuse to mark a CAPTURED transaction as FAILED.
+      // Symmetric guard to processPaymentCapture R-007. The state machine would throw below
+      // (ACKNOWLEDGED→PAYMENT_FAILED is invalid), but this guard makes the intent explicit
+      // so a future developer does not interpret the asymmetry as an oversight.
+      console.info(`[processPaymentFailed] received EXPIRED for CAPTURED transaction id=${payload.id}`)
+      return
+    }
+
     await tx.transaction.update({
       where: { id: transaction.id },
       data: {
