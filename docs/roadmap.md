@@ -73,12 +73,12 @@ survive the migration — only their business semantics change.
 T-01 Auth providers                        [done] [planner]
 ├── T-02 Lab onboarding                    [done]
 │   └── T-03 Lab service management        [done]
-│       └── T-04 Service marketplace       [PR #5]
-│           └── T-05 ClientProfile on      [blocked: T-04] [planner]
+│       └── T-04 Service marketplace       [done]
+│           └── T-05 ClientProfile on      [ready] [planner]
 │                    create-order
 └── T-06 Order detail page (client)        [done]
-    ├── T-07 Quote flow                    [blocked: T-06, T-03, T-04.5] [planner]
-    └── T-08 Payment failure retry         [blocked: T-06] [planner]
+    ├── T-07 Quote flow                    [done]
+    └── T-08 Payment failure retry         [done]
 
 T-04.5 Tailwind CSS setup                  [done — CSS pipeline; T-07 UI blocker cleared]
 
@@ -125,9 +125,9 @@ Unblocked immediately or by T-03 merge. All directly implementable (no `[planner
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
 | T-03 merge | — | — | ✅ done (PR #3) |
-| T-04 Service marketplace | T-03 ✅ | 1 | ✅ PR #5 open |
+| T-04 Service marketplace | T-03 ✅ | 1 | ✅ done (PR #5) |
 | T-06 Order detail page (client) | T-01 ✅ | 1 | ✅ done (PR #4) |
-| T-04.5 Tailwind CSS setup | ready now | 1 | postcss + tailwind.config + globals.css; required before T-07 |
+| T-04.5 Tailwind CSS setup | ready now | 1 | ✅ done (PR #6) |
 | T-16 Idempotency key table | ready now | 1 | Schema migration + handler patch |
 
 **End state:** Lab-side and client-side read flows exist. T-07's blockers (T-03, T-06, T-04.5) all cleared.
@@ -138,9 +138,9 @@ All `[planner]` tagged; each requires a plan session, `/clear`, then implementat
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
-| T-05 ClientProfile on create-order | T-04 | 2 | Modifies existing production action |
-| T-07 Quote flow | T-06 + T-03 | 2 | Two sub-slices, three state transitions |
-| T-08 Payment failure retry | T-06 | 2 | Webhook failure path + retry CTA |
+| T-05 ClientProfile on create-order | T-04 ✅ | 2 | Ready — T-04 blocker cleared |
+| T-07 Quote flow | T-06 ✅ + T-03 ✅ | 2 | ✅ done (PR #7) |
+| T-08 Payment failure retry | T-06 ✅ | 2 | ✅ done (PR #8) |
 | T-09 Commission record | ready now | 2 | AD-001 direct payment model |
 | T-15 Lab KYC upload | T-02 ✅ | 2 | Gateway KYC API integration |
 
@@ -258,7 +258,7 @@ Entry point for client order creation — links to `/orders/new?serviceId=...`.
 
 ### T-04.5 — Tailwind CSS setup
 **Branch:** `feat/T04.5-tailwind-setup`
-**Status:** ready (no feature dependencies)
+**Status:** done (PR #6)
 
 The project writes Tailwind class names throughout but has no CSS pipeline wired up.
 `tailwindcss` is not in `package.json`; there is no `tailwind.config.js`,
@@ -300,7 +300,7 @@ assumes styles render.
 
 ### T-05 — ClientProfile collection on create-order `[planner]`
 **Branch:** `feat/T05-client-profile`
-**Status:** blocked by T-04
+**Status:** ready (T-04 ✅)
 **Why planner:** Modifies existing production action. Decisions needed: transaction boundary (ClientProfile inside same `$transaction` as Order), domain schema import discipline (`clientDetailsSchema` must be the sole validator), and whether to rewrite or surgically patch the existing action and UI without breaking the FIXED-mode happy path.
 
 Enhancement to the existing `create-order` slice. The current Server Action
@@ -337,7 +337,7 @@ dashboard already links here (`href` only, no page exists yet).
 
 ### T-07 — Quote flow `[planner]`
 **Branch:** `feat/T07-quote-flow`
-**Status:** blocked by T-06 ✅, T-03 ✅, T-04.5 ✅
+**Status:** done (PR #7)
 **Why planner:** Two sub-slices (lab-side provide, client-side respond), three state transitions (`QUOTE_REQUESTED→QUOTE_PROVIDED`, `QUOTE_PROVIDED→PENDING`, `QUOTE_PROVIDED→QUOTE_REJECTED`), TOCTOU guards on each, and the accept path must hand off to the existing checkout slice without coupling. Multiple non-obvious decisions about where to surface the quote UI on the order detail page.
 
 Lab-side: LAB_ADMIN sets `quotedPrice` on a `QUOTE_REQUESTED` order
@@ -355,8 +355,8 @@ Lab-side: LAB_ADMIN sets `quotedPrice` on a `QUOTE_REQUESTED` order
 ---
 
 ### T-08 — Payment failure retry `[planner]`
-**Branch:** `feat/T08-payment-retry`
-**Status:** blocked by T-06
+**Branch:** `feat/T08-payment-failure-retry`
+**Status:** done (PR #8)
 **Why planner:** Touches the existing webhook handler (adding failure path alongside the capture path), creates a new Transaction on retry (not updating the failed one — the two-ID scheme must be preserved), and the retry CTA on the order detail page must be gated on `PAYMENT_FAILED` status without introducing client-component sprawl.
 
 Xendit delivers a failure webhook → `Transaction.status = FAILED`,
@@ -666,3 +666,5 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | T-06 Order detail page | PR #4 `b5fef41` | Client order detail at /dashboard/orders/[orderId]; status timeline; PricingMode-aware |
 | T-04 Service marketplace | PR #5 `d5e35ec` | Public /services browse; category filter; order CTA links to create-order |
 | T-04.5 Tailwind CSS setup | PR #6 `2ffa22d` | tailwindcss ^3.4, postcss, autoprefixer; V2 green brand palette; .tailwindignore |
+| T-07 Quote flow | PR #7 `0bf6c4e` | End-to-end quote flow: LAB_ADMIN provides quote (QUOTE_REQUESTED→QUOTE_PROVIDED), client accepts (→PAYMENT_PENDING) or rejects (→QUOTE_REJECTED); inline action panel on order-detail |
+| T-08 Payment failure retry | PR #8 `ab1d355` | EXPIRED webhook handler (processPaymentFailed); retryPayment action + OrderDetailRetryPayment UI; checkout app router mount at /dashboard/orders/[orderId]/pay; acceptQuote redirect fix |
