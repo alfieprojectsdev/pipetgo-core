@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { OrderStatus, TransactionStatus, UserRole, ServiceCategory, PricingMode } from '@prisma/client'
 import { testPrisma } from '@/test/test-prisma'
-import { processPaymentCapture } from '../handlers'
+import { processPaymentCapture, processPaymentFailed } from '../handlers'
 import type { XenditInvoicePayload } from '../types'
 
 vi.mock('@/lib/prisma', async () => {
@@ -18,13 +18,14 @@ const TEST_ORDER_ID_2 = 'test-order-2'
 const TEST_TX_EXTERNAL_ID_1 = 'xendit-test-ext-1'
 const TEST_TX_EXTERNAL_ID_2 = 'xendit-test-ext-2'
 const TEST_TX_EXTERNAL_ID_3 = 'xendit-test-ext-3'
+const TEST_TX_EXTERNAL_ID_4 = 'xendit-test-ext-4'
 
 async function cleanup() {
   await testPrisma.labWallet.deleteMany({ where: { labId: TEST_LAB_ID } })
   await testPrisma.transaction.deleteMany({
     where: {
       externalId: {
-        in: [TEST_TX_EXTERNAL_ID_1, TEST_TX_EXTERNAL_ID_2, TEST_TX_EXTERNAL_ID_3],
+        in: [TEST_TX_EXTERNAL_ID_1, TEST_TX_EXTERNAL_ID_2, TEST_TX_EXTERNAL_ID_3, TEST_TX_EXTERNAL_ID_4],
       },
     },
   })
@@ -183,5 +184,126 @@ describe('processPaymentCapture', () => {
 
     const wallet = await testPrisma.labWallet.findUnique({ where: { labId: TEST_LAB_ID } })
     expect(wallet).toBeNull()
+  })
+
+  // EXPIRED-then-PAID race guard (ref: R-007): PAID for a FAILED transaction throws.
+  it('throws when Transaction is already FAILED (EXPIRED-then-PAID race, ref: R-007)', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_1,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.PAYMENT_FAILED,
+        quantity: 1,
+      },
+    })
+    await testPrisma.transaction.create({
+      data: {
+        id: 'test-tx-failed-guard',
+        orderId: TEST_ORDER_ID_1,
+        externalId: TEST_TX_EXTERNAL_ID_4,
+        provider: 'xendit',
+        amount: '1500.00',
+        status: TransactionStatus.FAILED,
+        failureReason: 'Xendit invoice EXPIRED',
+      },
+    })
+
+    const payload: XenditInvoicePayload = {
+      id: TEST_TX_EXTERNAL_ID_4,
+      status: 'PAID',
+      paid_amount: 1500,
+      payer_email: 'client@test.local',
+    }
+
+    await expect(processPaymentCapture(payload)).rejects.toThrow(/FAILED/)
+  })
+})
+
+describe('processPaymentFailed', () => {
+  it('marks Transaction FAILED and transitions Order to PAYMENT_FAILED', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_1,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.PAYMENT_PENDING,
+        quantity: 1,
+      },
+    })
+    await testPrisma.transaction.create({
+      data: {
+        id: 'test-tx-failed-1',
+        orderId: TEST_ORDER_ID_1,
+        externalId: TEST_TX_EXTERNAL_ID_4,
+        provider: 'xendit',
+        amount: '1500.00',
+        status: TransactionStatus.PENDING,
+      },
+    })
+
+    const payload: XenditInvoicePayload = {
+      id: TEST_TX_EXTERNAL_ID_4,
+      status: 'EXPIRED',
+      paid_amount: 0,
+      payer_email: 'client@test.local',
+    }
+
+    await processPaymentFailed(payload)
+
+    const tx = await testPrisma.transaction.findFirst({ where: { externalId: TEST_TX_EXTERNAL_ID_4 } })
+    expect(tx!.status).toBe(TransactionStatus.FAILED)
+    expect(tx!.failureReason).toMatch(/EXPIRED/)
+    const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_1 } })
+    expect(order!.status).toBe(OrderStatus.PAYMENT_FAILED)
+  })
+
+  it('is a no-op when Transaction is already FAILED (idempotency)', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_1,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.PAYMENT_FAILED,
+        quantity: 1,
+      },
+    })
+    await testPrisma.transaction.create({
+      data: {
+        id: 'test-tx-failed-2',
+        orderId: TEST_ORDER_ID_1,
+        externalId: TEST_TX_EXTERNAL_ID_4,
+        provider: 'xendit',
+        amount: '1500.00',
+        status: TransactionStatus.FAILED,
+        failureReason: 'Xendit invoice EXPIRED',
+      },
+    })
+
+    const payload: XenditInvoicePayload = {
+      id: TEST_TX_EXTERNAL_ID_4,
+      status: 'EXPIRED',
+      paid_amount: 0,
+      payer_email: 'client@test.local',
+    }
+
+    await processPaymentFailed(payload)
+
+    const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_1 } })
+    expect(order!.status).toBe(OrderStatus.PAYMENT_FAILED)
+  })
+
+  it('returns without error when Transaction is not found (orphan tolerance)', async () => {
+    const payload: XenditInvoicePayload = {
+      id: 'xendit-unknown-ext-id',
+      status: 'EXPIRED',
+      paid_amount: 0,
+      payer_email: 'client@test.local',
+    }
+
+    await expect(processPaymentFailed(payload)).resolves.not.toThrow()
   })
 })

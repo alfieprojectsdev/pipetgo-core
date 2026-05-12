@@ -11,8 +11,8 @@ Guard: Renders 404 for any order that does not belong to the authenticated clien
 | File        | What                                                                             | When to read                                                         |
 | ----------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | `page.tsx`  | Async RSC — CLIENT auth guard, ownership guard, Decimal/Date DTO, full render   | Modifying auth gate, order fetch, DTO fields, badge map, or timeline |
-| `ui.tsx`    | `'use client'` — `OrderDetailQuoteActions`: Accept/Reject forms with `useActionState`, rendered only when status === `QUOTE_PROVIDED` | Modifying quote action panel layout or error display |
-| `action.ts` | `acceptQuote` (QUOTE_PROVIDED→PAYMENT_PENDING direct transition, redirect to checkout), `rejectQuote` (→QUOTE_REJECTED, revalidatePath) | Modifying accept/reject transitions |
+| `ui.tsx`    | `'use client'` — `OrderDetailQuoteActions` (Accept/Reject, QUOTE_PROVIDED), `OrderDetailRetryPayment` (Retry Payment, PAYMENT_FAILED) | Modifying action panel layout or error display |
+| `action.ts` | `acceptQuote` (QUOTE_PROVIDED→PAYMENT_PENDING, redirect to checkout), `rejectQuote` (→QUOTE_REJECTED), `retryPayment` (PAYMENT_FAILED→PAYMENT_PENDING, redirect to checkout) | Modifying accept/reject/retry transitions |
 
 ## Invariants
 
@@ -26,3 +26,7 @@ Guard: Renders 404 for any order that does not belong to the authenticated clien
 - `rejectQuote` is terminal for T-07. The `QUOTE_REJECTED→QUOTE_REQUESTED` re-request loop is T-09.
 - Client quote actions are inline (not a separate slice) because `QUOTE_PROVIDED` renders the same order summary as all other statuses plus an action panel — a dispatcher would require duplicating the base rendering or an ADR-001-violating cross-slice import.
 - `OrderDetailQuoteActions` is only rendered when `dto.status === 'QUOTE_PROVIDED' && dto.quotedPrice != null`. Both checks are intentional: the status check is the logic gate; the null check is deploy-safety.
+- `retryPayment` does not create a Xendit invoice — it only transitions PAYMENT_FAILED→PAYMENT_PENDING and redirects to the checkout page; `initiateCheckout` creates the fresh invoice when the client clicks Pay.
+- `retryPayment` redirect target is `/dashboard/orders/${orderId}/pay` — the canonical checkout route mounted at `src/app/dashboard/orders/[orderId]/pay/page.tsx`.
+- `acceptQuote` redirect target is `/dashboard/orders/${orderId}/pay` (same canonical checkout route). The historical `/checkout/${orderId}` target had no app router mount.
+- `OrderDetailRetryPayment` is only rendered when `dto.status === 'PAYMENT_FAILED'`.

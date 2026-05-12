@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Decimal } from '@prisma/client/runtime/library'
-import { TransactionStatus } from '@prisma/client'
+import { OrderStatus, TransactionStatus } from '@prisma/client'
 
 const mockTxUpdate = vi.fn().mockResolvedValue({})
-const mockTxOrderFindUnique = vi.fn().mockResolvedValue({ labId: 'mock-lab-id' })
+const mockTxOrderFindUnique = vi.fn().mockResolvedValue({ id: 'mock-order-id', labId: 'mock-lab-id', status: OrderStatus.PAYMENT_PENDING })
+const mockTxOrderUpdate = vi.fn().mockRejectedValue(new Error('order update failure'))
 const mockTxLabWalletUpsert = vi.fn().mockRejectedValue(new Error('wallet failure'))
 const mockTxTransactionFindFirst = vi.fn().mockResolvedValue({
   id: 'mock-tx-id',
@@ -20,6 +21,7 @@ const mockTx = {
   },
   order: {
     findUnique: mockTxOrderFindUnique,
+    update: mockTxOrderUpdate,
   },
   labWallet: {
     upsert: mockTxLabWalletUpsert,
@@ -36,7 +38,11 @@ vi.mock('@/features/orders/handle-payment-captured/handler', () => ({
   handlePaymentCaptured: vi.fn().mockResolvedValue(undefined),
 }))
 
-import { processPaymentCapture } from '../handlers'
+vi.mock('@/domain/orders/state-machine', () => ({
+  isValidStatusTransition: vi.fn().mockReturnValue(true),
+}))
+
+import { processPaymentCapture, processPaymentFailed } from '../handlers'
 import type { XenditInvoicePayload } from '../types'
 
 describe('processPaymentCapture — rollback error propagation', () => {
@@ -49,5 +55,18 @@ describe('processPaymentCapture — rollback error propagation', () => {
     }
 
     await expect(processPaymentCapture(payload)).rejects.toThrow('wallet failure')
+  })
+})
+
+describe('processPaymentFailed — rollback error propagation', () => {
+  it('rejects when order.update throws, confirming error propagation triggers Prisma rollback', async () => {
+    const payload: XenditInvoicePayload = {
+      id: 'xendit-mock-ext',
+      status: 'EXPIRED',
+      paid_amount: 0,
+      payer_email: 'client@test.local',
+    }
+
+    await expect(processPaymentFailed(payload)).rejects.toThrow('order update failure')
   })
 })

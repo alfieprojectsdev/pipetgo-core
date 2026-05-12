@@ -3,7 +3,7 @@
 import { useActionState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { acceptQuote, rejectQuote } from './action'
+import { acceptQuote, rejectQuote, retryPayment } from './action'
 
 export function OrderDetailQuoteActions({
   orderId,
@@ -39,6 +39,33 @@ export function OrderDetailQuoteActions({
         )}
         {rejectState?.message && (
           <p className="mt-2 text-sm text-red-600">{rejectState.message}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// OrderDetailRetryPayment: single-action card rendered only when status === PAYMENT_FAILED.
+// Does not re-display quotedPrice — user already accepted quote before reaching this state.
+export function OrderDetailRetryPayment({
+  orderId,
+}: {
+  orderId: string
+}) {
+  const [state, retryAction] = useActionState(retryPayment, null)
+
+  return (
+    <Card className="mt-4">
+      <CardContent className="pt-6">
+        <p className="text-sm text-gray-700 mb-4">
+          Your previous payment attempt expired. Click Retry Payment to start a new payment.
+        </p>
+        <form action={retryAction}>
+          <input type="hidden" name="orderId" value={orderId} />
+          <Button type="submit">Retry Payment</Button>
+        </form>
+        {state?.message && (
+          <p className="mt-2 text-sm text-red-600">{state.message}</p>
         )}
       </CardContent>
     </Card>
