@@ -2,15 +2,15 @@
  * Xendit invoice webhook POST handler.
  *
  * Authenticates via x-callback-token header (static token, not HMAC).
- * Non-PAID payloads return 200 immediately — Xendit expects acknowledgement for
- * all delivery attempts regardless of business relevance. (ref: DL-002, DL-006)
+ * PAID dispatches to processPaymentCapture; EXPIRED to processPaymentFailed.
+ * Unknown statuses are acknowledged without processing; missing status throws. (ref: DL-009)
  *
  * $transaction errors propagate as 500 to trigger Xendit's automatic retry.
  * No auth() call — webhook is server-to-server; token header is the only credential. (ref: DL-007)
  */
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { processPaymentCapture } from './handlers'
+import { processPaymentCapture, processPaymentFailed } from './handlers'
 import type { XenditInvoicePayload } from './types'
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -34,12 +34,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const payload = (await req.json()) as XenditInvoicePayload
 
-  // Acknowledge non-PAID events without processing — Xendit sends PENDING, EXPIRED etc. (ref: DL-006)
-  if (payload.status !== 'PAID') {
-    return NextResponse.json({ received: true })
+  const status = (payload.status ?? '').toUpperCase()
+  console.info(`[webhook] received payload id=${payload.id} status=${status}`)
+
+  if (status === '') {
+    throw new Error('Xendit webhook missing payload.status')
   }
 
-  await processPaymentCapture(payload)
+  switch (status) {
+    case 'PAID':
+      console.info(`[webhook] dispatch to processPaymentCapture id=${payload.id}`)
+      await processPaymentCapture(payload)
+      break
+    case 'EXPIRED':
+      console.info(`[webhook] dispatch to processPaymentFailed id=${payload.id}`)
+      await processPaymentFailed(payload)
+      break
+    default:
+      console.info(`[webhook] acknowledged-without-processing id=${payload.id} status=${status}`)
+  }
 
   return NextResponse.json({ received: true })
 }

@@ -3,7 +3,7 @@ import { OrderStatus, PricingMode } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { OrderDetailQuoteActions } from './ui'
+import { OrderDetailQuoteActions, OrderDetailRetryPayment } from './ui'
 
 // Intentionally duplicated from clients/dashboard/ui.tsx — cross-slice import violates ADR-001.
 // Typed Record<OrderStatus, ...> so a missing enum value is a compile error at build time.
@@ -367,6 +367,10 @@ export default async function OrderDetailPage({
 
         {dto.status === 'QUOTE_PROVIDED' && dto.quotedPrice != null && (
           <OrderDetailQuoteActions orderId={dto.id} quotedPrice={dto.quotedPrice} />
+        )}
+
+        {dto.status === 'PAYMENT_FAILED' && (
+          <OrderDetailRetryPayment orderId={dto.id} />
         )}
 
         {dto.status === 'QUOTE_REJECTED' && (
