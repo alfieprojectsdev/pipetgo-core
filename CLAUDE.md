@@ -54,8 +54,9 @@ After every 3–5 merged PRs, review the diffs and all review comments (CodeRabb
 1. Write one imperative-style bullet for the **Implementation Discipline** section below — phrased as "X must Y" or "Never Z", with a real file path as a canonical example.
 2. Commit the bullet directly to `main` with message `docs: compounding protocol — <pattern name>`.
 
-**Trigger:** invoke by saying "run the Compounding Protocol" at any milestone. Last run after PRs #1–#4 (2026-05-11).
+**Trigger:** invoke by saying "run the Compounding Protocol" at any milestone. Last run after PRs #5–#8 (2026-05-12).
 
 ## Implementation Discipline
 
 - **Unhandled states must throw, never default silently.** Every unhandled enum branch, `??` fallback, `indexOf(x) === -1` coercion, `parseFloat` on untrusted input, `findFirst` on a uniqueness invariant, and missing try/catch around Prisma must `throw new Error(...)` so contract violations surface in dev rather than producing wrong output in prod. See `src/lib/auth.ts` — `throw new Error('JWT token missing role')` — as the canonical example.
+- **Prisma lookups on `@unique` fields must use `findUnique`, not `findFirst`.** `findFirst` silently picks an arbitrary row if the uniqueness invariant is ever violated; `findUnique` enforces the constraint at the query level and makes the lookup intent explicit. See `src/features/payments/webhooks/handlers.ts` — `tx.transaction.findUnique({ where: { externalId: payload.id } })` — as the canonical example.
