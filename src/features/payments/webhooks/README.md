@@ -21,8 +21,7 @@ and Order records atomically.
    - Updates `Transaction` to `CAPTURED`, sets `capturedAt`.
    - Constructs `PaymentCapturedEvent` and calls `handlePaymentCaptured` from the
      orders slice inside the same transaction.
-   - Fetches `Order.labId` (read-consistent within same transaction). (ref: DL-004)
-   - Upserts `LabWallet.pendingBalance += Transaction.amount` (Decimal, not payload float) for the lab. (ref: DL-002, DL-003, DL-005)
+   - No LabWallet write. Commission tracking is handled by Payout records created inside `completeOrder` at order completion. (ref: DL-001, DL-016)
 5. `handlers.ts:processPaymentFailed` runs a Prisma `$transaction` (EXPIRED path):
    - Finds `Transaction` by `Transaction.externalId == payload.id`.
    - Returns early if not found (orphan tolerance) or already `FAILED` (idempotency).
@@ -53,36 +52,23 @@ Xendit retries automatically on transient failures.
 
 ## Invariants
 
-- Idempotency check (`findFirst` + status guard) is inside `$transaction` to
+- Idempotency check (`findUnique` on `Transaction.externalId` + status guard) is inside `$transaction` to
   prevent race conditions from concurrent Xendit deliveries. (ref: DL-004)
 - `PaymentCapturedEvent.amount` comes from `Transaction.amount` (Prisma `Decimal`),
   not `payload.paid_amount` (float). (ref: DL-005)
 - Order status transitions are owned by the orders slice — this handler never
   writes `Order.status` directly. (ref: DL-001)
-- `LabWallet.pendingBalance` is credited at capture time; `availableBalance` is only
-  incremented when a Payout reaches `COMPLETED`. Crediting `availableBalance` here would
-  skip the payout lifecycle. (ref: DL-002)
-- `LabWallet` upsert uses `upsert` (not `update`) — a row may not exist for a lab's
-  first payment. (ref: DL-005)
-- `LabWallet.labId` is `@unique` (prisma/schema.prisma:299); the Prisma `$transaction`
-  holds a row lock for the upsert, making concurrent webhook deliveries race-free — no
-  separate application-level guard is needed.
+- Webhook capture writes only `Transaction.status` and (via fan-out) `Order.status`;
+  commission settlement is tracked via Payout records created at order completion,
+  not at payment capture. (ref: DL-016)
 
 ## Design decisions
 
-**LabWallet credit is inlined in `handlers.ts`** rather than extracted to a separate
-`wallets/credit-wallet` slice. ADR-001 uses a `creditLabWallet` fan-out example that
-names a hypothetical `@/features/wallets/credit-wallet/handler` — that example is
-aspirational documentation for a future wallets slice, not a binding constraint. The
-implementation was deliberately scoped to the webhook slice only; extracting a wallets
-slice would introduce a new cross-slice import from payments to wallets, which is a
-larger architectural change requiring its own plan.
-
-**Order is fetched twice within the same `$transaction`** — once inside
-`handlePaymentCaptured` (for status transition) and once in `handlers.ts` (for
-`labId`). This double-read is an accepted tradeoff at MVP order volumes: PostgreSQL
-read-consistency guarantees both reads see the same snapshot at negligible cost. If
-needed, this can be eliminated later by returning `labId` from `handlePaymentCaptured`.
+**AD-001 Direct Payment**: Under the AD-001 model, the client pays the lab directly
+via Xendit Managed Sub-Account. The webhook handler's job is solely to advance
+Transaction and Order state. Commission tracking moves to `Payout` records created
+inside `completeOrder` — see `src/features/orders/lab-fulfillment/` and
+`docs/roadmap.md` AD-001 section.
 
 ## Required env vars
 
@@ -99,11 +85,13 @@ Integration tests for `processPaymentCapture` are split across two files by mock
 
 | File | Tests | DB strategy | Why |
 |------|-------|-------------|-----|
-| `__tests__/handlers.test.ts` | 1-3: wallet creation, balance increment, idempotency | Real test database (`DATABASE_TEST_URL`) | Financial ledger correctness requires DB-level verification — mocking hides Decimal type mismatches and FK constraint errors |
+| `__tests__/handlers.test.ts` | 1-2: AD-001 wallet-untouched assertions, idempotency | Real test database (`DATABASE_TEST_URL`) | Confirms no LabWallet write occurs and Transaction.status is CAPTURED — mocking hides Decimal type mismatches and FK constraint errors |
+| `__tests__/handlers.test.ts` | 3: idempotency (already CAPTURED) | Real test database | Confirms early-return guard; wallet remains null |
 | `__tests__/handlers.test.ts` | 4: processPaymentCapture FAILED guard (EXPIRED-then-PAID race) | Real test database | Tests the guard that throws on FAILED transaction — same real-DB rationale |
-| `__tests__/handlers.test.ts` | 5-7: processPaymentFailed transitions, idempotency, orphan tolerance | Real test database | Same rationale as above; confirms status field writes and failureReason |
-| `__tests__/handlers-rollback.test.ts` | 8: processPaymentCapture rollback error propagation | Full Prisma mock (`vi.fn()` stubs) | Forcing `tx.labWallet.upsert` to fail on a real database requires schema changes; `$transaction` atomicity is a Prisma/PostgreSQL guarantee, so this test verifies error propagation only |
-| `__tests__/handlers-rollback.test.ts` | 9: processPaymentFailed rollback | Full Prisma mock | Same rationale — forcing `tx.order.update` to fail; atomicity is a Prisma guarantee |
+| `__tests__/handlers.test.ts` | 5-6: completeOrder Payout creation, no CAPTURED Transaction throws | Real test database | Confirms Payout record is created with correct fee split and that missing CAPTURED Transaction surfaces as thrown error |
+| `__tests__/handlers.test.ts` | 7-9: processPaymentFailed transitions, idempotency, orphan tolerance | Real test database | Same rationale as above; confirms status field writes and failureReason |
+| `__tests__/handlers-rollback.test.ts` | 10: processPaymentCapture rollback error propagation | Full Prisma mock (`vi.fn()` stubs) | Forcing `tx.transaction.update` to fail on a real database requires schema changes; `$transaction` atomicity is a Prisma/PostgreSQL guarantee, so this test verifies error propagation only |
+| `__tests__/handlers-rollback.test.ts` | 11: processPaymentFailed rollback | Full Prisma mock | Same rationale — forcing `tx.order.update` to fail; atomicity is a Prisma guarantee |
 
 Tests 1-3 require `DATABASE_TEST_URL` set in `.env.test`. The global setup
 (`src/test/global-setup.ts`) runs `prisma db push` against the test database
