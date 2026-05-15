@@ -1,13 +1,23 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { OrderStatus, TransactionStatus, UserRole, ServiceCategory, PricingMode } from '@prisma/client'
+import { OrderStatus, TransactionStatus, UserRole, ServiceCategory, PricingMode, PayoutStatus } from '@prisma/client'
 import { testPrisma } from '@/test/test-prisma'
 import { processPaymentCapture, processPaymentFailed } from '../handlers'
+import { completeOrder } from '@/features/orders/lab-fulfillment/action'
+import { isRedirectError } from 'next/dist/client/components/redirect'
 import type { XenditInvoicePayload } from '../types'
 
 vi.mock('@/lib/prisma', async () => {
   const { testPrisma: client } = await import('@/test/test-prisma')
   return { prisma: client }
 })
+
+vi.mock('@/lib/auth', () => ({
+  auth: vi.fn().mockResolvedValue({
+    user: { id: 'test-user-lab-1', role: 'LAB_ADMIN' },
+  }),
+}))
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
+vi.mock('next/navigation', () => ({ redirect: vi.fn() }))
 
 const TEST_USER_CLIENT_ID = 'test-user-client-1'
 const TEST_USER_LAB_ID = 'test-user-lab-1'
@@ -21,6 +31,7 @@ const TEST_TX_EXTERNAL_ID_3 = 'xendit-test-ext-3'
 const TEST_TX_EXTERNAL_ID_4 = 'xendit-test-ext-4'
 
 async function cleanup() {
+  await testPrisma.payout.deleteMany({ where: { orderId: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2] } } })
   await testPrisma.labWallet.deleteMany({ where: { labId: TEST_LAB_ID } })
   await testPrisma.transaction.deleteMany({
     where: {
@@ -76,7 +87,8 @@ afterAll(async () => {
 })
 
 describe('processPaymentCapture', () => {
-  it('creates LabWallet with pendingBalance equal to Transaction.amount on first payment', async () => {
+  // Under AD-001 Direct Payment, processPaymentCapture must NOT write LabWallet. (ref: DL-001, DL-008)
+  it('advances Transaction to CAPTURED and does not credit LabWallet on first payment under AD-001', async () => {
     await testPrisma.order.create({
       data: {
         id: TEST_ORDER_ID_1,
@@ -109,11 +121,12 @@ describe('processPaymentCapture', () => {
     await processPaymentCapture(payload)
 
     const wallet = await testPrisma.labWallet.findUnique({ where: { labId: TEST_LAB_ID } })
-    expect(wallet).not.toBeNull()
-    expect(wallet!.pendingBalance.toFixed(2)).toBe('1500.00')
+    expect(wallet).toBeNull()
+    const tx = await testPrisma.transaction.findUnique({ where: { externalId: TEST_TX_EXTERNAL_ID_1 } })
+    expect(tx!.status).toBe(TransactionStatus.CAPTURED)
   })
 
-  it('increments pendingBalance on subsequent payment', async () => {
+  it('leaves pre-existing LabWallet row balance unchanged under AD-001', async () => {
     await testPrisma.labWallet.create({
       data: { labId: TEST_LAB_ID, pendingBalance: '500.00' },
     })
@@ -148,7 +161,7 @@ describe('processPaymentCapture', () => {
     await processPaymentCapture(payload)
 
     const wallet = await testPrisma.labWallet.findUnique({ where: { labId: TEST_LAB_ID } })
-    expect(wallet!.pendingBalance.toFixed(2)).toBe('2000.00')
+    expect(wallet!.pendingBalance.toFixed(2)).toBe('500.00')
   })
 
   it('returns early without crediting LabWallet when Transaction is already CAPTURED (idempotency)', async () => {
@@ -218,6 +231,75 @@ describe('processPaymentCapture', () => {
     }
 
     await expect(processPaymentCapture(payload)).rejects.toThrow(/FAILED/)
+  })
+})
+
+// Payout creation tests live here (not lab-fulfillment/__tests__) to share the real-DB setup and cleanup with webhook capture tests. (ref: DL-003)
+describe('completeOrder — Payout commission record creation', () => {
+  const TEST_TX_INTERNAL_ID = 'test-tx-internal-payout'
+
+  it('creates a QUEUED Payout with correct fee split when completeOrder is called on an IN_PROGRESS order', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_1,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.IN_PROGRESS,
+        quantity: 1,
+      },
+    })
+    await testPrisma.transaction.create({
+      data: {
+        id: TEST_TX_INTERNAL_ID,
+        orderId: TEST_ORDER_ID_1,
+        externalId: TEST_TX_EXTERNAL_ID_1,
+        provider: 'xendit',
+        amount: '1500.00',
+        status: TransactionStatus.CAPTURED,
+      },
+    })
+
+    const formData = new FormData()
+    formData.set('orderId', TEST_ORDER_ID_1)
+    formData.set('notes', 'Done')
+
+    try {
+      await completeOrder(null, formData)
+    } catch (err) {
+      if (!isRedirectError(err)) throw err
+    }
+
+    const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_1 } })
+    expect(order!.status).toBe(OrderStatus.COMPLETED)
+    expect(order!.notes).toBe('Done')
+
+    const payout = await testPrisma.payout.findFirst({ where: { orderId: TEST_ORDER_ID_1 } })
+    expect(payout).not.toBeNull()
+    expect(payout!.grossAmount.toFixed(2)).toBe('1500.00')
+    expect(payout!.platformFee.toFixed(2)).toBe('150.00')
+    expect(payout!.netAmount.toFixed(2)).toBe('1350.00')
+    expect(payout!.feePercentage.toFixed(4)).toBe('0.1000')
+    expect(payout!.status).toBe(PayoutStatus.QUEUED)
+    expect(payout!.transactionId).toBe(TEST_TX_INTERNAL_ID)
+  })
+
+  it('throws when no CAPTURED Transaction exists for the order', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_2,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.IN_PROGRESS,
+        quantity: 1,
+      },
+    })
+
+    const formData = new FormData()
+    formData.set('orderId', TEST_ORDER_ID_2)
+
+    await expect(completeOrder(null, formData)).rejects.toThrow(/CAPTURED Transaction/)
   })
 })
 

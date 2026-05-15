@@ -2,10 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { Decimal } from '@prisma/client/runtime/library'
 import { OrderStatus, TransactionStatus } from '@prisma/client'
 
-const mockTxUpdate = vi.fn().mockResolvedValue({})
-const mockTxOrderFindUnique = vi.fn().mockResolvedValue({ id: 'mock-order-id', labId: 'mock-lab-id', status: OrderStatus.PAYMENT_PENDING })
+const mockTxTransactionUpdate = vi.fn().mockRejectedValue(new Error('transaction update failure'))
 const mockTxOrderUpdate = vi.fn().mockRejectedValue(new Error('order update failure'))
-const mockTxLabWalletUpsert = vi.fn().mockRejectedValue(new Error('wallet failure'))
 const mockTxTransactionFindUnique = vi.fn().mockResolvedValue({
   id: 'mock-tx-id',
   externalId: 'xendit-mock-ext',
@@ -17,14 +15,10 @@ const mockTxTransactionFindUnique = vi.fn().mockResolvedValue({
 const mockTx = {
   transaction: {
     findUnique: mockTxTransactionFindUnique,
-    update: mockTxUpdate,
+    update: mockTxTransactionUpdate,
   },
   order: {
-    findUnique: mockTxOrderFindUnique,
     update: mockTxOrderUpdate,
-  },
-  labWallet: {
-    upsert: mockTxLabWalletUpsert,
   },
 }
 
@@ -46,7 +40,8 @@ import { processPaymentCapture, processPaymentFailed } from '../handlers'
 import type { XenditInvoicePayload } from '../types'
 
 describe('processPaymentCapture — rollback error propagation', () => {
-  it('rejects with the wallet upsert error, confirming error propagation that triggers Prisma rollback', async () => {
+  // Forces tx.transaction.update rejection to verify $transaction error propagation; no LabWallet mock needed under AD-001. (ref: DL-009)
+  it('rejects with the transaction update error, confirming error propagation that triggers Prisma rollback', async () => {
     const payload: XenditInvoicePayload = {
       id: 'xendit-mock-ext',
       status: 'PAID',
@@ -54,7 +49,7 @@ describe('processPaymentCapture — rollback error propagation', () => {
       payer_email: 'lab@test.local',
     }
 
-    await expect(processPaymentCapture(payload)).rejects.toThrow('wallet failure')
+    await expect(processPaymentCapture(payload)).rejects.toThrow('transaction update failure')
   })
 })
 

@@ -38,7 +38,9 @@ action.ts (Server Actions)
   completeOrder:
     -> TOCTOU re-fetch: re-verify ownership + status (DL-007)
     -> isValidStatusTransition(IN_PROGRESS, COMPLETED)
-    -> prisma.order.update status = COMPLETED, notes = formData.notes (DL-003)
+    -> tx.order.update status = COMPLETED, notes = formData.notes (DL-003, DL-011)
+    -> tx.transaction.findFirst({ orderId, status: CAPTURED }) — throws if none (DL-004)
+    -> tx.payout.create({ grossAmount, platformFee, netAmount, feePercentage, QUEUED }) — commission record (DL-003, DL-007)
     -> revalidatePath then redirect('/dashboard/lab') (DL-006)
 ```
 
@@ -88,3 +90,33 @@ redirects to `/dashboard/lab` because the order is terminal for this view.
 - `LabOrderDTO` fields are all primitive strings. No `Prisma.Decimal` or `Date`
   objects cross the RSC-to-client boundary.
 - Both server actions re-fetch the order to guard against TOCTOU races.
+
+**Payout commission record created inside completeOrder $transaction (DL-003)**: Under
+AD-001 Direct Payment, Xendit automatically splits PipetGo commission at settlement;
+the Payout record captures confirmed commission at order completion — PipetGo's side
+of the ledger. All fee arithmetic uses Decimal (DL-006); gross comes from
+`Transaction.amount` (Decimal(12,2), schema.prisma:247), not `Order.quotedPrice`, so
+commission is computed on the amount actually captured. `Payout.status` starts at
+`QUEUED`; T-10 (settlement webhook) owns the `QUEUED → COMPLETED` transition (DL-007).
+
+**Invariant — one Payout per COMPLETED order (DL-003)**: every Order transitioning to
+`COMPLETED` produces exactly one `Payout` in `QUEUED` state inside the same
+`$transaction`. Absence of a `CAPTURED` Transaction means the contract is violated;
+the action throws (`new Error`) per Implementation Discipline rather than silently
+defaulting. Double-execution is prevented by the existing TOCTOU guard: a second
+invocation finds `Order.status === COMPLETED` on the re-fetch and throws before
+reaching `tx.payout.create` (DL-015).
+
+**No backfill for pre-T-09 COMPLETED orders (DL-014)**: production has zero historical
+COMPLETED orders before T-09 ships. T-10 implementors can assume every COMPLETED order
+from T-09 onward has exactly one QUEUED Payout.
+
+**handlePaymentCaptured must NOT create Payout (DL-016)**: a Payout at capture time
+is premature — the lab may issue a refund or the order may not reach COMPLETED.
+Payout creation is exclusive to completeOrder.
+
+**Slice boundary: Payout write is schema-level, not cross-slice (DL-010)**: `completeOrder`
+gains one ledger write (`tx.payout.create`) but does not import from `@/features/payments/*`.
+`Payout` is a Prisma model owned by the schema, not a feature slice; writing it via `tx`
+is a schema-level operation. The only added import is `COMMISSION_RATE` from
+`@/domain/payments/commission` — kernel-level, allowed under ADR-001.
