@@ -39,6 +39,10 @@ action.ts (Server Actions)
     -> TOCTOU re-fetch: re-verify ownership + status (DL-007)
     -> isValidStatusTransition(IN_PROGRESS, COMPLETED)
     -> prisma.order.update status = COMPLETED, notes = formData.notes (DL-003)
+    -> tx.transaction.findFirst (CAPTURED) — returns null for FIXED-mode (no Payout created)
+    -> tx.payout.create status=QUEUED, platformFee=grossAmount*0.10, netAmount=gross-fee
+    -> tx.labWallet.upsert pendingBalance += platformFee (PipetGo commission ledger; not lab escrow)
+       Atomically inside the same $transaction as Payout.create. (ref: DL-002)
     -> revalidatePath then redirect('/dashboard/lab') (DL-006)
 ```
 

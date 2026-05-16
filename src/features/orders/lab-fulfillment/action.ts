@@ -18,7 +18,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { OrderStatus } from '@prisma/client'
+import { OrderStatus, PayoutStatus, TransactionStatus } from '@prisma/client'
+import { Decimal } from '@prisma/client/runtime/library'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { isValidStatusTransition } from '@/domain/orders/state-machine'
@@ -111,6 +112,46 @@ export async function completeOrder(
         status: OrderStatus.COMPLETED,
         ...(notes != null ? { notes } : {}),
       },
+    })
+
+    const transaction = await tx.transaction.findFirst({
+      where: { orderId, status: TransactionStatus.CAPTURED },
+      orderBy: { capturedAt: 'desc' },
+    })
+
+    if (!transaction) {
+      return null
+    }
+
+    // Hardcoded at 10 % (AD-001 MVP rate). Payout.feePercentage stores the
+    // applied rate for historical accuracy if the rate changes in the future.
+    const COMMISSION_RATE = new Decimal('0.1000')
+    const grossAmount = transaction.amount
+    const platformFee = grossAmount.mul(COMMISSION_RATE)
+    const netAmount = grossAmount.sub(platformFee)
+
+    await tx.payout.create({
+      data: {
+        labId: order.lab.id,
+        orderId,
+        transactionId: transaction.id,
+        grossAmount,
+        platformFee,
+        netAmount,
+        feePercentage: COMMISSION_RATE,
+        status: PayoutStatus.QUEUED,
+      },
+    })
+
+    // Credit LabWallet.pendingBalance with platformFee — PipetGo's 10 % commission.
+    // LabWallet is PipetGo's income ledger per lab, not lab escrow.
+    // platformFee (not netAmount) is the ledger figure. (ref: DL-001)
+    // Credited at Payout-QUEUED creation time so processSettlement can decrement atomically
+    // at settlement without a zero-pendingBalance window. (ref: DL-002)
+    await tx.labWallet.upsert({
+      where: { labId: order.lab.id },
+      update: { pendingBalance: { increment: platformFee } },
+      create: { labId: order.lab.id, pendingBalance: platformFee },
     })
 
     return null
