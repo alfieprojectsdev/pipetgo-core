@@ -15,10 +15,12 @@ import type { XenditInvoicePayload } from './types'
 /**
  * Finds the Transaction by Xendit invoice ID, marks it CAPTURED, and dispatches
  * PaymentCapturedEvent to the orders slice handler — all within one $transaction.
+ * No LabWallet write; commission is tracked via Payout records created inside
+ * completeOrder at order completion. (ref: DL-001, DL-016)
  *
  * Returns early (200 to caller) if Transaction is not found (orphan tolerance) or
  * already CAPTURED (idempotency). Both guards are inside the transaction boundary
- * to prevent race conditions from concurrent webhook deliveries. (ref: DL-004, DL-007)
+ * to prevent race conditions from concurrent Xendit deliveries. (ref: DL-004, DL-007)
  */
 export async function processPaymentCapture(payload: XenditInvoicePayload): Promise<void> {
   await prisma.$transaction(async (tx) => {
@@ -68,11 +70,6 @@ export async function processPaymentCapture(payload: XenditInvoicePayload): Prom
 
     // Delegates Order.status transition to orders slice — ADR-001 fan-out pattern. (ref: DL-001)
     await handlePaymentCaptured(event, tx)
-
-    // LabWallet.pendingBalance is credited at Payout-QUEUED creation time in
-    // lab-fulfillment/action.ts (completeOrder). Crediting at capture time would
-    // use Transaction.amount (gross) rather than Payout.platformFee (commission share),
-    // producing an incorrect ledger figure. (ref: DL-001, DL-002)
   })
 }
 

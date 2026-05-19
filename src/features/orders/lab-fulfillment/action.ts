@@ -18,11 +18,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { OrderStatus, PayoutStatus, TransactionStatus } from '@prisma/client'
-import { Decimal } from '@prisma/client/runtime/library'
+import { OrderStatus, TransactionStatus, PayoutStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { isValidStatusTransition } from '@/domain/orders/state-machine'
+import { COMMISSION_RATE } from '@/domain/payments/commission'
 
 type ActionState = { message?: string } | null
 
@@ -75,9 +75,10 @@ export async function startProcessing(
 /**
  * Transitions an IN_PROGRESS order to COMPLETED and writes the lab
  * technician's result notes to Order.notes. The re-fetch, ownership check,
- * and status write are wrapped in a single $transaction for an atomic
- * read-check-write, eliminating the TOCTOU race window. Redirects to
- * /dashboard/lab on success. (ref: DL-006, DL-007)
+ * status write, and Payout creation are wrapped in a single $transaction for
+ * an atomic read-check-write, eliminating the TOCTOU race window. (ref: DL-003, DL-015)
+ * Creates a QUEUED Payout recording commission confirmed at order completion.
+ * Redirects to /dashboard/lab on success. (ref: DL-006, DL-007)
  */
 export async function completeOrder(
   _prevState: ActionState,
@@ -114,32 +115,39 @@ export async function completeOrder(
       },
     })
 
-    const transaction = await tx.transaction.findFirst({
+    // Order.update precedes the Payout write: the TOCTOU guard above has already
+    // validated IN_PROGRESS -> COMPLETED; status write first preserves the
+    // established action.ts pattern (status write, then ledger writes). (ref: DL-011)
+
+    // findFirst because Transaction has no @unique on (orderId, status) — it is
+    // an @@index only. At COMPLETED time exactly one CAPTURED row exists per orderId
+    // (capture is idempotent; retries write new PENDING rows, not new CAPTURED). (ref: DL-004)
+    const capturedTransaction = await tx.transaction.findFirst({
       where: { orderId, status: TransactionStatus.CAPTURED },
-      orderBy: { capturedAt: 'desc' },
     })
 
-    if (!transaction) {
+    if (!capturedTransaction) {
+      // FIXED-mode orders have no Xendit invoice and no CAPTURED Transaction — skip Payout. (ref: AD-001)
+      console.info(`[completeOrder] No CAPTURED Transaction for orderId=${orderId} — FIXED-mode, skipping Payout`)
       return null
     }
 
-    // Hardcoded at 10 % (AD-001 MVP rate). Payout.feePercentage stores the
-    // applied rate for historical accuracy if the rate changes in the future.
-    const COMMISSION_RATE = new Decimal('0.1000')
-    const grossAmount = transaction.amount
+    // All arithmetic on Prisma Decimal instances — no Number coercion at any step.
+    // capturedTransaction.amount is Decimal(12,2) per schema.prisma:247. (ref: DL-006, DL-013)
+    const grossAmount = capturedTransaction.amount
     const platformFee = grossAmount.mul(COMMISSION_RATE)
     const netAmount = grossAmount.sub(platformFee)
 
     await tx.payout.create({
       data: {
-        labId: order.lab.id,
         orderId,
-        transactionId: transaction.id,
+        labId: order.lab.id, // relation object already in memory from ownership check (ref: DL-012)
+        transactionId: capturedTransaction.id,
         grossAmount,
         platformFee,
         netAmount,
         feePercentage: COMMISSION_RATE,
-        status: PayoutStatus.QUEUED,
+        status: PayoutStatus.QUEUED, // T-10 (settlement webhook) owns QUEUED -> COMPLETED. (ref: DL-007)
       },
     })
 
@@ -153,6 +161,7 @@ export async function completeOrder(
       update: { pendingBalance: { increment: platformFee } },
       create: { labId: order.lab.id, pendingBalance: platformFee },
     })
+
 
     return null
   })

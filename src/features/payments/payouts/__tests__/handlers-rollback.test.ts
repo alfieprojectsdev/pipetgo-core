@@ -22,14 +22,14 @@ const mockWalletFindUnique = vi.fn().mockResolvedValue({
   pendingBalance: new Decimal('500.00'),
   availableBalance: new Decimal('0.00'),
 })
-const mockPayoutUpdate = vi.fn().mockResolvedValue({})
+const mockPayoutUpdateMany = vi.fn().mockResolvedValue({ count: 1 })
 const mockWalletUpdate = vi.fn().mockRejectedValue(new Error('wallet-update-failure'))
 
 const mockTx = {
   payout: {
     findUnique: mockPayoutFindUnique,
     findFirst: mockPayoutFindFirst,
-    update: mockPayoutUpdate,
+    updateMany: mockPayoutUpdateMany,
   },
   labWallet: {
     findUnique: mockWalletFindUnique,
@@ -58,8 +58,8 @@ describe('processSettlement — rollback error propagation', () => {
     await expect(processSettlement(basePayload)).rejects.toThrow('wallet-update-failure')
   })
 
-  it('rejects when payout.update throws, confirming error propagation triggers Prisma rollback', async () => {
-    mockPayoutUpdate.mockRejectedValueOnce(new Error('payout-update-failure'))
+  it('rejects when payout.updateMany throws, confirming error propagation triggers Prisma rollback', async () => {
+    mockPayoutUpdateMany.mockRejectedValueOnce(new Error('payout-update-failure'))
 
     await expect(processSettlement(basePayload)).rejects.toThrow('payout-update-failure')
   })
