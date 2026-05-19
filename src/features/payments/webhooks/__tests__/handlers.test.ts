@@ -3,7 +3,6 @@ import { OrderStatus, TransactionStatus, UserRole, ServiceCategory, PricingMode,
 import { testPrisma } from '@/test/test-prisma'
 import { processPaymentCapture, processPaymentFailed } from '../handlers'
 import { completeOrder } from '@/features/orders/lab-fulfillment/action'
-import { isRedirectError } from 'next/dist/client/components/redirect'
 import type { XenditInvoicePayload } from '../types'
 
 vi.mock('@/lib/prisma', async () => {
@@ -264,11 +263,7 @@ describe('completeOrder — Payout commission record creation', () => {
     formData.set('orderId', TEST_ORDER_ID_1)
     formData.set('notes', 'Done')
 
-    try {
-      await completeOrder(null, formData)
-    } catch (err) {
-      if (!isRedirectError(err)) throw err
-    }
+    await completeOrder(null, formData)
 
     const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_1 } })
     expect(order!.status).toBe(OrderStatus.COMPLETED)
