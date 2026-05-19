@@ -279,7 +279,7 @@ describe('completeOrder — Payout commission record creation', () => {
     expect(payout!.transactionId).toBe(TEST_TX_INTERNAL_ID)
   })
 
-  it('throws when no CAPTURED Transaction exists for the order', async () => {
+  it('completes order without Payout when no CAPTURED Transaction exists (FIXED-mode)', async () => {
     await testPrisma.order.create({
       data: {
         id: TEST_ORDER_ID_2,
@@ -294,7 +294,13 @@ describe('completeOrder — Payout commission record creation', () => {
     const formData = new FormData()
     formData.set('orderId', TEST_ORDER_ID_2)
 
-    await expect(completeOrder(null, formData)).rejects.toThrow(/CAPTURED Transaction/)
+    // FIXED-mode: no CAPTURED Transaction → completeOrder silently skips Payout creation. (ref: AD-001)
+    await completeOrder(null, formData)
+
+    const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_2 } })
+    expect(order!.status).toBe(OrderStatus.COMPLETED)
+    const payout = await testPrisma.payout.findFirst({ where: { orderId: TEST_ORDER_ID_2 } })
+    expect(payout).toBeNull()
   })
 })
 

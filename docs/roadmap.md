@@ -82,8 +82,8 @@ T-01 Auth providers                        [done] [planner]
 
 T-04.5 Tailwind CSS setup                  [done — CSS pipeline; T-07 UI blocker cleared]
 
-T-09 Commission record on completion       [ready — lab-fulfillment done] [planner]
-└── T-10 Commission settlement webhook     [blocked: T-09] [planner]
+T-09 Commission record on completion       [done — PR #9] [planner]
+└── T-10 Commission settlement webhook     [ready] [planner]
     └── T-11 Lab wallet dashboard          [blocked: T-10]
 
 T-12 Attachment uploads                    [blocked: T-06, storage decision] [planner]
@@ -141,7 +141,7 @@ All `[planner]` tagged; each requires a plan session, `/clear`, then implementat
 | T-05 ClientProfile on create-order | T-04 ✅ | 2 | ✅ done (foundation commit `1b23c0b`) |
 | T-07 Quote flow | T-06 ✅ + T-03 ✅ | 2 | ✅ done (PR #7) |
 | T-08 Payment failure retry | T-06 ✅ | 2 | ✅ done (PR #8) |
-| T-09 Commission record | ready now | 2 | AD-001 direct payment model |
+| T-09 Commission record | T-09 ✅ | 2 | ✅ done (PR #9) |
 | T-15 Lab KYC upload | T-02 ✅ | 2 | Gateway KYC API integration |
 
 **End state:** Full order lifecycle functional (create → quote → pay → complete). Commission records written on completion.
@@ -152,7 +152,7 @@ Depends on Phase 2 completing. T-14 is the prerequisite for T-17.
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
-| T-10 Commission settlement webhook | T-09 | 2 | LabWallet balance move |
+| T-10 Commission settlement webhook | T-09 ✅ | 2 | LabWallet balance move — **next** |
 | T-11 Lab wallet dashboard | T-10 | 1 | No `[planner]` |
 | T-14 Payment provider normalization | ready now | 3 | Complex refactor; AD-002 expanded scope |
 
@@ -375,7 +375,7 @@ action creates a new Xendit invoice and transitions back to `PAYMENT_PENDING`.
 
 ### T-09 — Commission record on order completion `[planner]`
 **Branch:** `feat/T09-commission-record`
-**Status:** ready (lab-fulfillment done)
+**Status:** done (PR #9)
 **Routing model:** Direct Payment (AD-001)
 **Why planner:** Modifies the existing production `completeOrder` action and `processPaymentCapture`. Two changes in one ticket: (1) remove the `LabWallet.pendingBalance` credit in `processPaymentCapture` — that write is wrong under the direct model since the lab already received the money via Xendit sub-account split; (2) create a `Payout` commission record when `completeOrder` fires. Fee arithmetic must use `Decimal` throughout. Plan must confirm Xendit sub-account split percentage config and where the commission rate constant lives.
 
@@ -399,7 +399,7 @@ create a `Payout` record representing PipetGo's confirmed commission for that or
 
 ### T-10 — Commission settlement webhook `[planner]`
 **Branch:** `feat/T10-commission-settlement`
-**Status:** blocked by T-09
+**Status:** ready (T-09 ✅)
 **Routing model:** Direct Payment (AD-001)
 **Why planner:** New webhook slice from Xendit confirming commission split has settled into PipetGo's account. Financial atomicity required (`LabWallet.availableBalance += netAmount`, `pendingBalance -= netAmount`), idempotency guard, and balance-never-negative invariant. Must follow T-14's `NormalizedWebhookPayload` pattern and T-16's idempotency key table if that is implemented first.
 
@@ -668,3 +668,4 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | T-04.5 Tailwind CSS setup | PR #6 `2ffa22d` | tailwindcss ^3.4, postcss, autoprefixer; V2 green brand palette; .tailwindignore |
 | T-07 Quote flow | PR #7 `0bf6c4e` | End-to-end quote flow: LAB_ADMIN provides quote (QUOTE_REQUESTED→QUOTE_PROVIDED), client accepts (→PAYMENT_PENDING) or rejects (→QUOTE_REJECTED); inline action panel on order-detail |
 | T-08 Payment failure retry | PR #8 `ab1d355` | EXPIRED webhook handler (processPaymentFailed); retryPayment action + OrderDetailRetryPayment UI; checkout app router mount at /dashboard/orders/[orderId]/pay; acceptQuote redirect fix |
+| T-09 Commission record on completion | PR #9 `9182b0a` | Remove LabWallet credit from processPaymentCapture (AD-001); add COMMISSION_RATE domain constant; create QUEUED Payout inside completeOrder $transaction with Decimal fee arithmetic |

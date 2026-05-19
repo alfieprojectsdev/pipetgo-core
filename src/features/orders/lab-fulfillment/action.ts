@@ -127,8 +127,9 @@ export async function completeOrder(
     })
 
     if (!capturedTransaction) {
-      // Absence is a contract violation per Implementation Discipline — throw, never default. (ref: DL-004)
-      throw new Error(`No CAPTURED Transaction found for orderId ${orderId} during Payout creation`)
+      // FIXED-mode orders have no Xendit invoice and no CAPTURED Transaction — skip Payout. (ref: AD-001)
+      console.info(`[completeOrder] No CAPTURED Transaction for orderId=${orderId} — FIXED-mode, skipping Payout`)
+      return null
     }
 
     // All arithmetic on Prisma Decimal instances — no Number coercion at any step.
@@ -149,6 +150,18 @@ export async function completeOrder(
         status: PayoutStatus.QUEUED, // T-10 (settlement webhook) owns QUEUED -> COMPLETED. (ref: DL-007)
       },
     })
+
+    // Credit LabWallet.pendingBalance with platformFee — PipetGo's 10 % commission.
+    // LabWallet is PipetGo's income ledger per lab, not lab escrow.
+    // platformFee (not netAmount) is the ledger figure. (ref: DL-001)
+    // Credited at Payout-QUEUED creation time so processSettlement can decrement atomically
+    // at settlement without a zero-pendingBalance window. (ref: DL-002)
+    await tx.labWallet.upsert({
+      where: { labId: order.lab.id },
+      update: { pendingBalance: { increment: platformFee } },
+      create: { labId: order.lab.id, pendingBalance: platformFee },
+    })
+
 
     return null
   })

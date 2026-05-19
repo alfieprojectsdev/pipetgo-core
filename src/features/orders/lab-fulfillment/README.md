@@ -39,8 +39,10 @@ action.ts (Server Actions)
     -> TOCTOU re-fetch: re-verify ownership + status (DL-007)
     -> isValidStatusTransition(IN_PROGRESS, COMPLETED)
     -> tx.order.update status = COMPLETED, notes = formData.notes (DL-003, DL-011)
-    -> tx.transaction.findFirst({ orderId, status: CAPTURED }) — throws if none (DL-004)
-    -> tx.payout.create({ grossAmount, platformFee, netAmount, feePercentage, QUEUED }) — commission record (DL-003, DL-007)
+    -> tx.transaction.findFirst({ orderId, status: CAPTURED }) — returns null for FIXED-mode (DL-004)
+    -> tx.payout.create({ grossAmount, platformFee, netAmount, feePercentage, QUEUED }) — commission record
+    -> tx.labWallet.upsert pendingBalance += platformFee (PipetGo commission ledger; not lab escrow)
+       Atomically inside the same $transaction as Payout.create. (ref: DL-002)
     -> revalidatePath then redirect('/dashboard/lab') (DL-006)
 ```
 
