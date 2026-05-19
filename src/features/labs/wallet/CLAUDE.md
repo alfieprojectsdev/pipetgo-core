@@ -13,4 +13,4 @@ Lab wallet dashboard slice. Displays LabWallet balances and paginated Payout his
 
 - `LabWallet` may be null (no completed orders yet) — rendered as zero balances, not 404.
 - Payouts ordered newest-first (`orderBy: { createdAt: 'desc' }`); this is a read-only view, no client-side re-sort needed.
-- `STATUS_BADGE` fallback in `ui.tsx` handles unknown status strings without throwing.
+- `STATUS_BADGE` in `ui.tsx` uses `satisfies Record<PayoutStatus, …>` — adding a new `PayoutStatus` to the schema without a badge entry is a compile-time error, not a silent fallback.

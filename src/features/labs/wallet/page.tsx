@@ -14,6 +14,7 @@
  */
 
 import { notFound, redirect } from 'next/navigation'
+import { type PayoutStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { LabWalletUI } from './ui'
@@ -27,7 +28,7 @@ export type LabWalletDTO = {
 
 export type LabPayoutDTO = {
   id: string
-  status: string
+  status: PayoutStatus
   grossAmount: string
   platformFee: string
   netAmount: string
