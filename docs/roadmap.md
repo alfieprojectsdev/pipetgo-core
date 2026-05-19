@@ -83,8 +83,8 @@ T-01 Auth providers                        [done] [planner]
 T-04.5 Tailwind CSS setup                  [done — CSS pipeline; T-07 UI blocker cleared]
 
 T-09 Commission record on completion       [done — PR #9] [planner]
-└── T-10 Commission settlement webhook     [ready] [planner]
-    └── T-11 Lab wallet dashboard          [blocked: T-10]
+└── T-10 Commission settlement webhook     [done — PR #10] [planner]
+    └── T-11 Lab wallet dashboard          [ready]
 
 T-12 Attachment uploads                    [blocked: T-06, storage decision] [planner]
 T-13 Admin panel                           [blocked: T-01, post-MVP] [planner]
@@ -152,8 +152,8 @@ Depends on Phase 2 completing. T-14 is the prerequisite for T-17.
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
-| T-10 Commission settlement webhook | T-09 ✅ | 2 | LabWallet balance move — **next** |
-| T-11 Lab wallet dashboard | T-10 | 1 | No `[planner]` |
+| T-10 Commission settlement webhook | T-09 ✅ | 2 | ✅ done (PR #10) |
+| T-11 Lab wallet dashboard | T-10 ✅ | 1 | No `[planner]` — **next** |
 | T-14 Payment provider normalization | ready now | 3 | Complex refactor; AD-002 expanded scope |
 
 **End state:** Financial flows closed. Xendit→PayMongo migration path ready (T-14 done).
@@ -399,7 +399,7 @@ create a `Payout` record representing PipetGo's confirmed commission for that or
 
 ### T-10 — Commission settlement webhook `[planner]`
 **Branch:** `feat/T10-commission-settlement`
-**Status:** ready (T-09 ✅)
+**Status:** done (PR #10)
 **Routing model:** Direct Payment (AD-001)
 **Why planner:** New webhook slice from Xendit confirming commission split has settled into PipetGo's account. Financial atomicity required (`LabWallet.availableBalance += netAmount`, `pendingBalance -= netAmount`), idempotency guard, and balance-never-negative invariant. Must follow T-14's `NormalizedWebhookPayload` pattern and T-16's idempotency key table if that is implemented first.
 
@@ -669,3 +669,4 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | T-07 Quote flow | PR #7 `0bf6c4e` | End-to-end quote flow: LAB_ADMIN provides quote (QUOTE_REQUESTED→QUOTE_PROVIDED), client accepts (→PAYMENT_PENDING) or rejects (→QUOTE_REJECTED); inline action panel on order-detail |
 | T-08 Payment failure retry | PR #8 `ab1d355` | EXPIRED webhook handler (processPaymentFailed); retryPayment action + OrderDetailRetryPayment UI; checkout app router mount at /dashboard/orders/[orderId]/pay; acceptQuote redirect fix |
 | T-09 Commission record on completion | PR #9 `9182b0a` | Remove LabWallet credit from processPaymentCapture (AD-001); add COMMISSION_RATE domain constant; create QUEUED Payout inside completeOrder $transaction with Decimal fee arithmetic |
+| T-10 Commission settlement webhook | PR #10 `059219d` | Xendit settlement webhook (payouts/ slice); Payout QUEUED→COMPLETED; LabWallet pendingBalance→availableBalance atomic move; M-0 patch credits pendingBalance at Payout creation |
