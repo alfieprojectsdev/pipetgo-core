@@ -84,7 +84,7 @@ T-04.5 Tailwind CSS setup                  [done — CSS pipeline; T-07 UI block
 
 T-09 Commission record on completion       [done — PR #9] [planner]
 └── T-10 Commission settlement webhook     [done — PR #10] [planner]
-    └── T-11 Lab wallet dashboard          [in PR #11]
+    └── T-11 Lab wallet dashboard          [done — PR #11]
 
 T-12 Attachment uploads                    [blocked: T-06, storage decision] [planner]
 T-13 Admin panel                           [blocked: T-01, post-MVP] [planner]
@@ -153,7 +153,7 @@ Depends on Phase 2 completing. T-14 is the prerequisite for T-17.
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
 | T-10 Commission settlement webhook | T-09 ✅ | 2 | ✅ done (PR #10) |
-| T-11 Lab wallet dashboard | T-10 ✅ | 1 | No `[planner]` — PR #11 open |
+| T-11 Lab wallet dashboard | T-10 ✅ | 1 | ✅ done (PR #11) |
 | T-14 Payment provider normalization | ready now | 3 | Complex refactor; AD-002 expanded scope |
 
 **End state:** Financial flows closed. Xendit→PayMongo migration path ready (T-14 done).
@@ -421,7 +421,7 @@ from `LabWallet.pendingBalance` to `availableBalance` in PipetGo's commission le
 
 ### T-11 — Lab wallet dashboard
 **Branch:** `feat/T11-lab-wallet`
-**Status:** in PR #11
+**Status:** done (PR #11)
 
 `/dashboard/lab/wallet` — shows `pendingBalance`, `availableBalance`,
 `withdrawnTotal`, and a paginated `Payout` history table with status badges.
@@ -670,3 +670,4 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | T-08 Payment failure retry | PR #8 `ab1d355` | EXPIRED webhook handler (processPaymentFailed); retryPayment action + OrderDetailRetryPayment UI; checkout app router mount at /dashboard/orders/[orderId]/pay; acceptQuote redirect fix |
 | T-09 Commission record on completion | PR #9 `9182b0a` | Remove LabWallet credit from processPaymentCapture (AD-001); add COMMISSION_RATE domain constant; create QUEUED Payout inside completeOrder $transaction with Decimal fee arithmetic |
 | T-10 Commission settlement webhook | PR #10 `059219d` | Xendit settlement webhook (payouts/ slice); Payout QUEUED→COMPLETED; LabWallet pendingBalance→availableBalance atomic move; M-0 patch credits pendingBalance at Payout creation |
+| T-11 Lab wallet dashboard | PR #11 `b3cd3d8` | /dashboard/lab/wallet — balance cards (pending/available/withdrawn), Payout history table with PayoutStatus badges; satisfies Record<PayoutStatus> exhaustiveness guard |
