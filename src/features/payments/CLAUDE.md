@@ -7,4 +7,4 @@ Payment feature slices. Each subdirectory is one vertical slice.
 | Directory    | What                                                                       | When to read                                              |
 | ------------ | -------------------------------------------------------------------------- | --------------------------------------------------------- |
 | `checkout/`  | Deferred-payment checkout — Xendit invoice creation and redirect           | Implementing or modifying the PAYMENT_PENDING pay flow    |
-| `webhooks/`  | Xendit invoice webhook — verifies x-callback-token, marks Transaction CAPTURED, dispatches to order handler, credits LabWallet.pendingBalance; integration tests in `webhooks/__tests__/` | Implementing or modifying webhook payment capture, lab wallet crediting, or payment capture tests |
+| `webhooks/`  | Xendit invoice webhook — verifies x-callback-token, marks Transaction CAPTURED, dispatches to order handler; no LabWallet write (AD-001); integration tests in `webhooks/__tests__/` | Implementing or modifying webhook payment capture or payment capture tests |

@@ -8,4 +8,4 @@ Read `README.md` first for boundary rules and design decisions.
 | Directory    | What                                                          | When to read                                          |
 | ------------ | ------------------------------------------------------------- | ----------------------------------------------------- |
 | `orders/`    | State machine, client validation schema, pricing logic        | Any slice that writes `Order.status` or creates orders |
-| `payments/`  | PayMongo webhook event types                                  | Implementing payment webhook handlers                 |
+| `payments/`  | Payment event types and commission rate constant              | Implementing payment webhook handlers or Payout creation |

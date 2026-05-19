@@ -18,10 +18,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { OrderStatus } from '@prisma/client'
+import { OrderStatus, TransactionStatus, PayoutStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { isValidStatusTransition } from '@/domain/orders/state-machine'
+import { COMMISSION_RATE } from '@/domain/payments/commission'
 
 type ActionState = { message?: string } | null
 
@@ -74,9 +75,10 @@ export async function startProcessing(
 /**
  * Transitions an IN_PROGRESS order to COMPLETED and writes the lab
  * technician's result notes to Order.notes. The re-fetch, ownership check,
- * and status write are wrapped in a single $transaction for an atomic
- * read-check-write, eliminating the TOCTOU race window. Redirects to
- * /dashboard/lab on success. (ref: DL-006, DL-007)
+ * status write, and Payout creation are wrapped in a single $transaction for
+ * an atomic read-check-write, eliminating the TOCTOU race window. (ref: DL-003, DL-015)
+ * Creates a QUEUED Payout recording commission confirmed at order completion.
+ * Redirects to /dashboard/lab on success. (ref: DL-006, DL-007)
  */
 export async function completeOrder(
   _prevState: ActionState,
@@ -110,6 +112,41 @@ export async function completeOrder(
       data: {
         status: OrderStatus.COMPLETED,
         ...(notes != null ? { notes } : {}),
+      },
+    })
+
+    // Order.update precedes the Payout write: the TOCTOU guard above has already
+    // validated IN_PROGRESS -> COMPLETED; status write first preserves the
+    // established action.ts pattern (status write, then ledger writes). (ref: DL-011)
+
+    // findFirst because Transaction has no @unique on (orderId, status) — it is
+    // an @@index only. At COMPLETED time exactly one CAPTURED row exists per orderId
+    // (capture is idempotent; retries write new PENDING rows, not new CAPTURED). (ref: DL-004)
+    const capturedTransaction = await tx.transaction.findFirst({
+      where: { orderId, status: TransactionStatus.CAPTURED },
+    })
+
+    if (!capturedTransaction) {
+      // Absence is a contract violation per Implementation Discipline — throw, never default. (ref: DL-004)
+      throw new Error(`No CAPTURED Transaction found for orderId ${orderId} during Payout creation`)
+    }
+
+    // All arithmetic on Prisma Decimal instances — no Number coercion at any step.
+    // capturedTransaction.amount is Decimal(12,2) per schema.prisma:247. (ref: DL-006, DL-013)
+    const grossAmount = capturedTransaction.amount
+    const platformFee = grossAmount.mul(COMMISSION_RATE)
+    const netAmount = grossAmount.sub(platformFee)
+
+    await tx.payout.create({
+      data: {
+        orderId,
+        labId: order.lab.id, // relation object already in memory from ownership check (ref: DL-012)
+        transactionId: capturedTransaction.id,
+        grossAmount,
+        platformFee,
+        netAmount,
+        feePercentage: COMMISSION_RATE,
+        status: PayoutStatus.QUEUED, // T-10 (settlement webhook) owns QUEUED -> COMPLETED. (ref: DL-007)
       },
     })
 
