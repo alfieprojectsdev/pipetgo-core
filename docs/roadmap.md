@@ -25,7 +25,7 @@ The direct payment model (AD-001) uses Xendit Managed Sub-Accounts for automatic
 
 **Consequence for T-14:** Scope expanded — the normalization layer must abstract both the webhook payload shape AND the auth mechanism (static token vs. HMAC-SHA256 + timestamp). Switching from Xendit to PayMongo on the inbound side must require only a new provider file + route, with no changes to handlers.ts or the domain layer.
 
-**Xendit static token risk assessment:** Mitigated at current scale by TLS + `$transaction`-bounded idempotency guard. T-16 (idempotency key table) closes the remaining concurrent-delivery window. Acceptable until PayMongo sub-merchant compatibility is confirmed and migration is planned.
+**Xendit static token risk assessment:** Mitigated at current scale by TLS + `$transaction`-bounded idempotency guard + `IdempotencyKey` dedup table (T-16, PR #12). Acceptable until PayMongo sub-merchant compatibility is confirmed and migration is planned.
 
 ---
 
@@ -89,11 +89,11 @@ T-09 Commission record on completion       [done — PR #9] [planner]
 T-12 Attachment uploads                    [blocked: T-06, storage decision] [planner]
 T-13 Admin panel                           [blocked: T-01, post-MVP] [planner]
 
-T-14 Payment provider normalization        [ready — refactor, no feature deps] [planner]
+T-14 Payment provider normalization        [up next — refactor, no feature deps] [planner]
 
 ── Phase 2 infrastructure ──────────────────────────────────────────────────
 T-15 Lab KYC document upload              [blocked: T-02] [planner]
-T-16 Idempotency key table                [ready — schema migration] [planner]
+T-16 Idempotency key table                [done — PR #12] [planner]
 T-17 PESONet virtual account integration  [blocked: T-14, payment research] [planner]
 
 ── Phase 3 regulatory ──────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ Unblocked immediately or by T-03 merge. All directly implementable (no `[planner
 | T-04 Service marketplace | T-03 ✅ | 1 | ✅ done (PR #5) |
 | T-06 Order detail page (client) | T-01 ✅ | 1 | ✅ done (PR #4) |
 | T-04.5 Tailwind CSS setup | ready now | 1 | ✅ done (PR #6) |
-| T-16 Idempotency key table | ready now | 1 | Schema migration + handler patch |
+| T-16 Idempotency key table | ready now | 1 | ✅ done (PR #12) |
 
 **End state:** Lab-side and client-side read flows exist. T-07's blockers (T-03, T-06, T-04.5) all cleared.
 
@@ -154,7 +154,7 @@ Depends on Phase 2 completing. T-14 is the prerequisite for T-17.
 |--------|----------------|----------|-------|
 | T-10 Commission settlement webhook | T-09 ✅ | 2 | ✅ done (PR #10) |
 | T-11 Lab wallet dashboard | T-10 ✅ | 1 | ✅ done (PR #11) |
-| T-14 Payment provider normalization | ready now | 3 | Complex refactor; AD-002 expanded scope |
+| T-14 Payment provider normalization | ready now | 3 | Complex refactor; AD-002 expanded scope — **up next** |
 
 **End state:** Financial flows closed. Xendit→PayMongo migration path ready (T-14 done).
 
@@ -460,7 +460,7 @@ Lab verification (`isVerified`), user role management, order oversight.
 
 ### T-14 — Payment provider normalization `[planner]`
 **Branch:** `feat/T14-payment-provider-normalization`
-**Status:** ready (refactor, no feature dependencies)
+**Status:** up next (refactor, no feature dependencies)
 **Why planner:** Cross-cutting refactor across `src/lib/payments/`, `src/features/payments/webhooks/`, and `src/domain/payments/`. The plan must define `NormalizedWebhookPayload`, the webhook auth abstraction interface, the location of per-provider verifier functions, and confirm that existing webhook tests pass without modification after the boundary moves.
 
 **Scope (expanded per AD-002):** The normalization layer must abstract two things, not one:
@@ -524,7 +524,7 @@ for file storage; this ticket adds the gateway KYC submission layer.
 
 ### T-16 — Idempotency key table `[planner]`
 **Branch:** `feat/T16-idempotency-keys`
-**Status:** ready (schema migration, no feature dependencies)
+**Status:** done (PR #12)
 **Why planner:** Schema migration adds `IdempotencyKey` model; existing webhook handlers must be updated to use it without breaking the current CAPTURED-status guard. Plan must define key composition (provider + externalId + event type), TTL strategy, and whether the table replaces or supplements the existing status-based guard.
 
 Current idempotency relies on `Transaction.status === CAPTURED` inside `$transaction`,
@@ -671,3 +671,5 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | T-09 Commission record on completion | PR #9 `9182b0a` | Remove LabWallet credit from processPaymentCapture (AD-001); add COMMISSION_RATE domain constant; create QUEUED Payout inside completeOrder $transaction with Decimal fee arithmetic |
 | T-10 Commission settlement webhook | PR #10 `059219d` | Xendit settlement webhook (payouts/ slice); Payout QUEUED→COMPLETED; LabWallet pendingBalance→availableBalance atomic move; M-0 patch credits pendingBalance at Payout creation |
 | T-11 Lab wallet dashboard | PR #11 `b3cd3d8` | /dashboard/lab/wallet — balance cards (pending/available/withdrawn), Payout history table with PayoutStatus badges; satisfies Record<PayoutStatus> exhaustiveness guard |
+| E1 integrity guard split | PR #12 `aa23d67` | Split compound `!order \|\| !order.lab` guards in quote-provide and lab-fulfillment pages; referential integrity violations now throw instead of calling notFound() |
+| T-16 Idempotency key table | PR #12 `aa23d67` | IdempotencyKey model; dedup key check+create in all three Xendit webhook handlers (PAID, EXPIRED, settlement); create-last invariant; three-layer dedup model |
