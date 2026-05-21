@@ -38,6 +38,9 @@ async function cleanup() {
     where: {
       key: {
         in: [
+          `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_1}`,
+          `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_2}`,
+          `xendit:invoice:EXPIRED:${TEST_TX_EXTERNAL_ID_4}`,
           `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_5}`,
           `xendit:invoice:EXPIRED:${TEST_TX_EXTERNAL_ID_5}`,
           `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_6}`,

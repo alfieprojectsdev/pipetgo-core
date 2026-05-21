@@ -41,6 +41,7 @@ async function cleanup() {
     where: {
       key: {
         in: [
+          `xendit:settlement:COMPLETED:${EXT_SETTLE_1}`,
           `xendit:settlement:COMPLETED:${EXT_SETTLE_DUP}`,
           `xendit:settlement:COMPLETED:${EXT_SETTLE_KEY_CREATE}`,
         ],
