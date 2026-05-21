@@ -29,7 +29,9 @@ export default async function QuoteProvidePage({
     include: { service: true, lab: true, clientProfile: true },
   })
 
-  if (!order || !order.lab || order.lab.ownerId !== session.user.id) notFound()
+  if (!order) notFound()
+  if (!order.lab) throw new Error(`Order ${params.orderId} missing lab after explicit include — referential integrity violation`)
+  if (order.lab.ownerId !== session.user.id) notFound()
   if (order.status !== OrderStatus.QUOTE_REQUESTED) notFound()
 
   const dto: QuoteOrderDTO = {

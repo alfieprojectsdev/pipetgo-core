@@ -4,8 +4,9 @@
  * Route: /dashboard/lab/orders/[orderId]
  * Auth:  LAB_ADMIN role only; redirects to /auth/signin otherwise.
  * Guard: Renders 404 for any order that does not belong to the authenticated
- *        lab admin (lab.ownerId !== session.user.id), lacks a lab relation,
- *        or is not in ACKNOWLEDGED or IN_PROGRESS status.
+ *        lab admin (lab.ownerId !== session.user.id) or is not in ACKNOWLEDGED
+ *        or IN_PROGRESS status. Throws if lab relation is null after explicit
+ *        include — that is a referential integrity violation, not a 404.
  *
  * Decimal fields (Order.quotedPrice) are converted to string before being passed
  * to the client component to prevent Next.js RSC serialization failure on
@@ -50,7 +51,8 @@ export default async function LabFulfillmentPage({
     include: { lab: true, service: true, clientProfile: true },
   })
 
-  if (!order || !order.lab) notFound()
+  if (!order) notFound()
+  if (!order.lab) throw new Error(`Order ${params.orderId} missing lab after explicit include — referential integrity violation`)
   // notFound() prevents information leakage: the caller cannot distinguish
   // a missing order from one that belongs to a different lab. (ref: DL-004)
   if (order.lab.ownerId !== session.user.id) notFound()

@@ -43,6 +43,7 @@ src/
 │   ├── services/
 │   ├── payments/
 │   ├── labs/
+│   ├── clients/
 │   └── auth/
 ├── domain/             # Domain kernel — shared invariants only (target: <300 lines)
 │   ├── orders/
@@ -50,7 +51,8 @@ src/
 │   │   ├── client-details.ts   # Canonical clientDetailsSchema (Zod)
 │   │   └── pricing.ts          # resolveOrderInitialState()
 │   └── payments/
-│       └── events.ts           # PaymentCapturedEvent, PaymentFailedEvent (types only)
+│       ├── events.ts           # PaymentCapturedEvent, PaymentFailedEvent (types only)
+│       └── commission.ts       # COMMISSION_RATE — Decimal(5,4) constant for fee arithmetic
 ├── app/                # Next.js App Router — thin routing shell only
 ├── components/         # Generic UI components (Button, Input, Card)
 ├── lib/                # Shared infrastructure (Prisma client, Auth config)
@@ -67,17 +69,23 @@ The kernel is not a service layer. There are no abstract repository interfaces, 
 mappers, or DI containers. It contains only the canonical type definitions and guard
 functions that must be shared across multiple slices.
 
-### PayMongo Webhook Pattern
+### Xendit Webhook Pattern
 
-A `payment.paid` event must atomically update `Transaction`, `Order`, `LabWallet`, and
-optionally `Notification` — four domain objects across four feature slices. Rather than
-a God Slice that imports from all four, the webhook handler dispatches typed
-`PaymentCapturedEvent` / `PaymentFailedEvent` values (from `src/domain/payments/events.ts`)
-to per-slice handlers, called sequentially inside a single `prisma.$transaction`. The
-domain kernel defines the contract; the slices own the state transitions.
+A payment capture event must atomically update `Transaction` and `Order` — two domain
+objects across two feature slices. Rather than a God Slice that imports from both, the
+webhook handler dispatches typed `PaymentCapturedEvent` / `PaymentFailedEvent` values
+(from `src/domain/payments/events.ts`) to per-slice handlers, called sequentially inside
+a single `prisma.$transaction`. The domain kernel defines the contract; the slices own
+the state transitions.
 
-PayMongo signature verification requires reading the raw request body as text before
-JSON parsing. Re-serializing a parsed body breaks the HMAC-SHA256 comparison.
+Xendit invoice webhooks are authenticated via a static `XENDIT_WEBHOOK_TOKEN` compared
+with `crypto.timingSafeEqual`. Settlement payouts use a separate token
+(`XENDIT_SETTLEMENT_WEBHOOK_TOKEN`) and a dedicated `src/features/payments/payouts/`
+slice — different Xendit product, independent token rotation.
+
+The current payment provider is Xendit (AD-001 Direct Payment model). A migration path
+to PayMongo for inbound capture is documented in AD-002 and gated on T-14 (payment
+provider normalization).
 
 ## Stack
 
@@ -88,7 +96,7 @@ JSON parsing. Re-serializing a parsed body breaks the HMAC-SHA256 comparison.
 | Database | PostgreSQL (Neon) + Prisma 5.x | Prisma 7 drops `url` from datasource; pinned at `^5.22.0` |
 | Auth | NextAuth.js v5 (beta) | JWT strategy — no `Session` table in schema |
 | Validation | Zod | Single source of truth; domain kernel schemas imported by all slices |
-| Payments | PayMongo | HMAC-SHA256 webhook verification; raw body required |
+| Payments | Xendit | Static token webhook auth; Direct Payment model (AD-001); PayMongo migration path in AD-002 |
 | UI | Tailwind CSS + shadcn/ui | |
 
 ## Invariants

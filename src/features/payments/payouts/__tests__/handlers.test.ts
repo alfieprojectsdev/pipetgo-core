@@ -28,14 +28,39 @@ const TEST_PAYOUT_ID_2 = 'test-settle-payout-2'
 const TEST_PAYOUT_ID_3 = 'test-settle-payout-3'
 const TEST_PAYOUT_ID_4 = 'test-settle-payout-4'
 const TEST_PAYOUT_ID_5 = 'test-settle-payout-5'
+const TEST_PAYOUT_ID_6 = 'test-settle-payout-6'
+const TEST_PAYOUT_ID_7 = 'test-settle-payout-7'
 const EXT_SETTLE_1 = 'ext-settle-1'
 const EXT_SETTLE_2 = 'ext-settle-2'
 const EXT_SETTLE_5 = 'ext-settle-5'
+const EXT_SETTLE_DUP = 'ext-settle-dup'
+const EXT_SETTLE_KEY_CREATE = 'ext-settle-key-create'
 
 async function cleanup() {
+  await testPrisma.idempotencyKey.deleteMany({
+    where: {
+      key: {
+        in: [
+          `xendit:settlement:COMPLETED:${EXT_SETTLE_1}`,
+          `xendit:settlement:COMPLETED:${EXT_SETTLE_DUP}`,
+          `xendit:settlement:COMPLETED:${EXT_SETTLE_KEY_CREATE}`,
+        ],
+      },
+    },
+  })
   await testPrisma.payout.deleteMany({
     where: {
-      id: { in: [TEST_PAYOUT_ID_1, TEST_PAYOUT_ID_2, TEST_PAYOUT_ID_3, TEST_PAYOUT_ID_4, TEST_PAYOUT_ID_5] },
+      id: {
+        in: [
+          TEST_PAYOUT_ID_1,
+          TEST_PAYOUT_ID_2,
+          TEST_PAYOUT_ID_3,
+          TEST_PAYOUT_ID_4,
+          TEST_PAYOUT_ID_5,
+          TEST_PAYOUT_ID_6,
+          TEST_PAYOUT_ID_7,
+        ],
+      },
     },
   })
   await testPrisma.labWallet.deleteMany({ where: { labId: TEST_LAB_ID } })
@@ -220,6 +245,81 @@ describe('processSettlement', () => {
     expect(payout!.status).toBe(PayoutStatus.QUEUED)
     const wallet = await testPrisma.labWallet.findUnique({ where: { labId: TEST_LAB_ID } })
     expect(wallet!.availableBalance.toFixed(2)).toBe('0.00')
+  })
+
+  it('returns early on duplicate delivery when IdempotencyKey already exists for the settlement key', async () => {
+    await testPrisma.payout.create({
+      data: {
+        id: TEST_PAYOUT_ID_6,
+        labId: TEST_LAB_ID,
+        orderId: TEST_ORDER_ID_1,
+        transactionId: TEST_TX_ID_1,
+        grossAmount: '1500.00',
+        platformFee: '150.00',
+        netAmount: '1350.00',
+        feePercentage: '0.1000',
+        status: PayoutStatus.QUEUED,
+      },
+    })
+    await testPrisma.labWallet.create({
+      data: { labId: TEST_LAB_ID, pendingBalance: '150.00', availableBalance: '0.00' },
+    })
+    await testPrisma.idempotencyKey.create({
+      data: { key: `xendit:settlement:COMPLETED:${EXT_SETTLE_DUP}` },
+    })
+
+    const payload: XenditSettlementPayload = {
+      id: EXT_SETTLE_DUP,
+      status: 'COMPLETED',
+      amount: 1500,
+      external_id: TEST_ORDER_ID_1,
+    }
+
+    await processSettlement(payload)
+
+    const payout = await testPrisma.payout.findUnique({ where: { id: TEST_PAYOUT_ID_6 } })
+    expect(payout!.status).toBe(PayoutStatus.QUEUED)
+    const wallet = await testPrisma.labWallet.findUnique({ where: { labId: TEST_LAB_ID } })
+    expect(wallet!.pendingBalance.toFixed(2)).toBe('150.00')
+    expect(wallet!.availableBalance.toFixed(2)).toBe('0.00')
+  })
+
+  it('creates IdempotencyKey row inside the same transaction as the balance move', async () => {
+    await testPrisma.payout.create({
+      data: {
+        id: TEST_PAYOUT_ID_7,
+        labId: TEST_LAB_ID,
+        orderId: TEST_ORDER_ID_1,
+        transactionId: TEST_TX_ID_1,
+        grossAmount: '1500.00',
+        platformFee: '150.00',
+        netAmount: '1350.00',
+        feePercentage: '0.1000',
+        status: PayoutStatus.QUEUED,
+      },
+    })
+    await testPrisma.labWallet.create({
+      data: { labId: TEST_LAB_ID, pendingBalance: '150.00', availableBalance: '0.00' },
+    })
+
+    const payload: XenditSettlementPayload = {
+      id: EXT_SETTLE_KEY_CREATE,
+      status: 'COMPLETED',
+      amount: 1500,
+      external_id: TEST_ORDER_ID_1,
+    }
+
+    await processSettlement(payload)
+
+    const payout = await testPrisma.payout.findUnique({ where: { id: TEST_PAYOUT_ID_7 } })
+    expect(payout!.status).toBe(PayoutStatus.COMPLETED)
+    const wallet = await testPrisma.labWallet.findUnique({ where: { labId: TEST_LAB_ID } })
+    expect(wallet!.pendingBalance.toFixed(2)).toBe('0.00')
+    expect(wallet!.availableBalance.toFixed(2)).toBe('150.00')
+    const key = await testPrisma.idempotencyKey.findUnique({
+      where: { key: `xendit:settlement:COMPLETED:${EXT_SETTLE_KEY_CREATE}` },
+    })
+    expect(key).not.toBeNull()
   })
 
   it('PROCESSING contract violation — rejects with Error matching /PROCESSING/', async () => {
