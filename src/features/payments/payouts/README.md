@@ -32,7 +32,7 @@ commission share), not Payout.netAmount (the lab's net).
    - Step 2.5: `tx.labWallet.findUnique({ where: { labId: payout.labId } })` — explicit wallet read.
      - null → throw with typed message (M-0 invariant violated).
    - Step 3: compute `newPending = pendingBalance - platformFee`. Negative → throw.
-   - Step 4: `tx.payout.update` — status=COMPLETED, externalPayoutId=payload.id, completedAt=now.
+   - Step 4: `tx.payout.updateMany({ where: { id: payout.id, externalPayoutId: null }, ... })` — CAS guard; if `updateResult.count === 0`, another delivery already wrote `externalPayoutId` → return early without persisting IdempotencyKey.
    - Step 5: `tx.labWallet.update` — pendingBalance decrement + availableBalance increment in one call.
 5. `$transaction` errors propagate as 500 — Xendit retries on non-2xx.
 
@@ -45,10 +45,21 @@ commission share), not Payout.netAmount (the lab's net).
 
 ## Idempotency
 
-Duplicate detection uses `Payout.externalPayoutId` (`@unique`) as the native idempotency
-key. No separate IdempotencyKey table is needed (Payout already carries the key natively).
-The dual-lookup (Step 1 by externalPayoutId, Step 2 by orderId+QUEUED) handles both
-duplicate deliveries and first deliveries in a single handler path.
+Duplicate detection uses three layered guards:
+
+**Layer 1 — IdempotencyKey table (broad, schema-level):**
+The first step inside `processSettlement`'s `$transaction` looks up an `IdempotencyKey` row with key `xendit:settlement:COMPLETED:{payload.id}`. If the key row exists, the handler returns early (200 to Xendit). The key row is created as the last step before commit — AFTER the `Payout.updateMany count===0` short-circuit check — so concurrent-first-delivery losers (which return early via `count===0`) do not persist a key. Only the winning delivery does. A handler throw rolls back both the key and the writes, allowing Xendit retries to land cleanly on an empty key lookup. The key is created last — not first — because a transient mid-handler error after an early create would leave the key persisted with the business writes undone; Xendit retries would then see the key and skip work that never completed, causing permanent silent data loss.
+
+**Layer 2 — Dual Payout lookup (entity-state, @unique column):**
+- Step 1: `tx.payout.findUnique({ where: { externalPayoutId: payload.id } })` — idempotency for deliveries where `externalPayoutId` is already set.
+  - `COMPLETED` → return early.
+  - `PROCESSING` or `FAILED` → throw (contract violation).
+  - `QUEUED` → proceed with this Payout.
+- Step 2 (only if Step 1 found nothing): `tx.payout.findFirst({ where: { orderId: payload.external_id, status: QUEUED, externalPayoutId: null } })` — first-delivery lookup.
+  - `null` → return early (orphan tolerance).
+
+**Layer 3 — updateMany compare-and-set (concurrent first-delivery):**
+`tx.payout.updateMany({ where: { id: payout.id, externalPayoutId: null }, ... })` with `count===0` short-circuit handles simultaneous first-delivery races. Only the first delivery wins the update; the concurrent loser returns early via `count===0` and does not persist an IdempotencyKey row.
 
 ## Invariants
 
@@ -69,8 +80,9 @@ duplicate deliveries and first deliveries in a single handler path.
 
 Same split as `webhooks/` slice:
 - `__tests__/handlers.test.ts` — real test DB (DATABASE_TEST_URL) for ledger correctness:
-  first delivery, idempotent duplicate, orphan tolerance, negative-balance guard, PROCESSING contract violation.
-- `__tests__/handlers-rollback.test.ts` — full Prisma mock for rollback error propagation.
+  first delivery, idempotent duplicate (COMPLETED early-return), IdempotencyKey dedup (Layer 1 early-return), IdempotencyKey creation atomicity, orphan tolerance, negative-balance guard, PROCESSING contract violation.
+- `__tests__/handlers-rollback.test.ts` — full Prisma mock for rollback error propagation:
+  walletUpdate failure, payoutUpdateMany failure, idempotencyKey.create atomicity.
 
 ## Production Wiring
 
@@ -78,12 +90,3 @@ Checkout currently issues regular Xendit invoices (not sub-account split invoice
 handler is dormant until a later ticket migrates `src/features/payments/checkout/action.ts`
 to configure sub-account invoices. The webhook route and handler are production-ready;
 only the invoice creation needs updating to enable the settlement flow end-to-end. (ref: DL-012)
-
-Pre-merge: verify the Xendit dashboard for any existing settlement webhook registrations
-per AC-007. If any exist, document them here before merge.
-
-## Xendit payload shape verification
-
-All field names in `types.ts` are provisional and marked with `TODO(sandbox-verify)`. Verify
-against Xendit sub-account settlement webhook documentation and sandbox before enabling
-production traffic on this route.

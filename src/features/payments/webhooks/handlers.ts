@@ -24,6 +24,13 @@ import type { XenditInvoicePayload } from './types'
  */
 export async function processPaymentCapture(payload: XenditInvoicePayload): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    const idempotencyKey = `xendit:invoice:PAID:${payload.id}`
+    const existing = await tx.idempotencyKey.findUnique({ where: { key: idempotencyKey } })
+    if (existing) {
+      console.info(`[processPaymentCapture] dedup key hit key=${idempotencyKey}`)
+      return
+    }
+
     // Lookup by externalId (Xendit invoice ID), not Transaction.id (our cuid). (ref: DL-004)
     // findUnique enforces the @unique constraint at query level (Implementation Discipline).
     const transaction = await tx.transaction.findUnique({
@@ -70,6 +77,8 @@ export async function processPaymentCapture(payload: XenditInvoicePayload): Prom
 
     // Delegates Order.status transition to orders slice — ADR-001 fan-out pattern. (ref: DL-001)
     await handlePaymentCaptured(event, tx)
+
+    await tx.idempotencyKey.create({ data: { key: idempotencyKey } })
   })
 }
 
@@ -83,6 +92,13 @@ export async function processPaymentFailed(payload: XenditInvoicePayload): Promi
   console.info(`[processPaymentFailed] enter id=${payload.id} status=${payload.status}`)
 
   await prisma.$transaction(async (tx) => {
+    const idempotencyKey = `xendit:invoice:EXPIRED:${payload.id}`
+    const existing = await tx.idempotencyKey.findUnique({ where: { key: idempotencyKey } })
+    if (existing) {
+      console.info(`[processPaymentFailed] dedup key hit key=${idempotencyKey}`)
+      return
+    }
+
     // findUnique enforces the @unique constraint at query level (Implementation Discipline).
     const transaction = await tx.transaction.findUnique({
       where: { externalId: payload.id },
@@ -132,5 +148,7 @@ export async function processPaymentFailed(payload: XenditInvoicePayload): Promi
       where: { id: transaction.orderId },
       data: { status: OrderStatus.PAYMENT_FAILED },
     })
+
+    await tx.idempotencyKey.create({ data: { key: idempotencyKey } })
   })
 }

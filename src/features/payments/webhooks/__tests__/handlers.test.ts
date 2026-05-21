@@ -28,19 +28,44 @@ const TEST_TX_EXTERNAL_ID_1 = 'xendit-test-ext-1'
 const TEST_TX_EXTERNAL_ID_2 = 'xendit-test-ext-2'
 const TEST_TX_EXTERNAL_ID_3 = 'xendit-test-ext-3'
 const TEST_TX_EXTERNAL_ID_4 = 'xendit-test-ext-4'
+const TEST_TX_EXTERNAL_ID_5 = 'xendit-test-ext-5'
+const TEST_TX_EXTERNAL_ID_6 = 'xendit-test-ext-6'
+const TEST_ORDER_ID_3 = 'test-order-3'
+const TEST_ORDER_ID_4 = 'test-order-4'
 
 async function cleanup() {
-  await testPrisma.payout.deleteMany({ where: { orderId: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2] } } })
+  await testPrisma.idempotencyKey.deleteMany({
+    where: {
+      key: {
+        in: [
+          `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_5}`,
+          `xendit:invoice:EXPIRED:${TEST_TX_EXTERNAL_ID_5}`,
+          `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_6}`,
+          `xendit:invoice:EXPIRED:${TEST_TX_EXTERNAL_ID_6}`,
+        ],
+      },
+    },
+  })
+  await testPrisma.payout.deleteMany({
+    where: { orderId: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2, TEST_ORDER_ID_3, TEST_ORDER_ID_4] } },
+  })
   await testPrisma.labWallet.deleteMany({ where: { labId: TEST_LAB_ID } })
   await testPrisma.transaction.deleteMany({
     where: {
       externalId: {
-        in: [TEST_TX_EXTERNAL_ID_1, TEST_TX_EXTERNAL_ID_2, TEST_TX_EXTERNAL_ID_3, TEST_TX_EXTERNAL_ID_4],
+        in: [
+          TEST_TX_EXTERNAL_ID_1,
+          TEST_TX_EXTERNAL_ID_2,
+          TEST_TX_EXTERNAL_ID_3,
+          TEST_TX_EXTERNAL_ID_4,
+          TEST_TX_EXTERNAL_ID_5,
+          TEST_TX_EXTERNAL_ID_6,
+        ],
       },
     },
   })
   await testPrisma.order.deleteMany({
-    where: { id: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2] } },
+    where: { id: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2, TEST_ORDER_ID_3, TEST_ORDER_ID_4] } },
   })
   await testPrisma.labService.deleteMany({ where: { id: TEST_SERVICE_ID } })
   await testPrisma.lab.deleteMany({ where: { id: TEST_LAB_ID } })
@@ -198,6 +223,89 @@ describe('processPaymentCapture', () => {
     expect(wallet).toBeNull()
   })
 
+  it('returns early on duplicate delivery when IdempotencyKey already exists for the PAID key', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_3,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.PAYMENT_PENDING,
+        quantity: 1,
+      },
+    })
+    await testPrisma.transaction.create({
+      data: {
+        id: 'test-tx-idem-paid',
+        orderId: TEST_ORDER_ID_3,
+        externalId: TEST_TX_EXTERNAL_ID_5,
+        provider: 'xendit',
+        amount: '1500.00',
+        status: TransactionStatus.PENDING,
+      },
+    })
+    await testPrisma.idempotencyKey.create({
+      data: { key: `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_5}` },
+    })
+
+    const payload: XenditInvoicePayload = {
+      id: TEST_TX_EXTERNAL_ID_5,
+      status: 'PAID',
+      paid_amount: 1500,
+      payer_email: 'client@test.local',
+    }
+
+    await processPaymentCapture(payload)
+
+    const tx = await testPrisma.transaction.findUnique({ where: { externalId: TEST_TX_EXTERNAL_ID_5 } })
+    expect(tx!.status).toBe(TransactionStatus.PENDING)
+    const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_3 } })
+    expect(order!.status).toBe(OrderStatus.PAYMENT_PENDING)
+    const keys = await testPrisma.idempotencyKey.findMany({
+      where: { key: `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_5}` },
+    })
+    expect(keys).toHaveLength(1)
+  })
+
+  it('creates IdempotencyKey row inside the same transaction as the business writes', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_4,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.PAYMENT_PENDING,
+        quantity: 1,
+      },
+    })
+    await testPrisma.transaction.create({
+      data: {
+        id: 'test-tx-idem-create',
+        orderId: TEST_ORDER_ID_4,
+        externalId: TEST_TX_EXTERNAL_ID_6,
+        provider: 'xendit',
+        amount: '1500.00',
+        status: TransactionStatus.PENDING,
+      },
+    })
+
+    const payload: XenditInvoicePayload = {
+      id: TEST_TX_EXTERNAL_ID_6,
+      status: 'PAID',
+      paid_amount: 1500,
+      payer_email: 'client@test.local',
+    }
+
+    await processPaymentCapture(payload)
+
+    const tx = await testPrisma.transaction.findUnique({ where: { externalId: TEST_TX_EXTERNAL_ID_6 } })
+    expect(tx!.status).toBe(TransactionStatus.CAPTURED)
+    const key = await testPrisma.idempotencyKey.findUnique({
+      where: { key: `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_6}` },
+    })
+    expect(key).not.toBeNull()
+  })
+
   // EXPIRED-then-PAID race guard (ref: R-007): PAID for a FAILED transaction throws.
   it('throws when Transaction is already FAILED (EXPIRED-then-PAID race, ref: R-007)', async () => {
     await testPrisma.order.create({
@@ -269,14 +377,15 @@ describe('completeOrder — Payout commission record creation', () => {
     expect(order!.status).toBe(OrderStatus.COMPLETED)
     expect(order!.notes).toBe('Done')
 
-    const payout = await testPrisma.payout.findFirst({ where: { orderId: TEST_ORDER_ID_1 } })
-    expect(payout).not.toBeNull()
-    expect(payout!.grossAmount.toFixed(2)).toBe('1500.00')
-    expect(payout!.platformFee.toFixed(2)).toBe('150.00')
-    expect(payout!.netAmount.toFixed(2)).toBe('1350.00')
-    expect(payout!.feePercentage.toFixed(4)).toBe('0.1000')
-    expect(payout!.status).toBe(PayoutStatus.QUEUED)
-    expect(payout!.transactionId).toBe(TEST_TX_INTERNAL_ID)
+    const payouts = await testPrisma.payout.findMany({ where: { orderId: TEST_ORDER_ID_1 } })
+    expect(payouts).toHaveLength(1)
+    const payout = payouts[0]
+    expect(payout.grossAmount.toFixed(2)).toBe('1500.00')
+    expect(payout.platformFee.toFixed(2)).toBe('150.00')
+    expect(payout.netAmount.toFixed(2)).toBe('1350.00')
+    expect(payout.feePercentage.toFixed(4)).toBe('0.1000')
+    expect(payout.status).toBe(PayoutStatus.QUEUED)
+    expect(payout.transactionId).toBe(TEST_TX_INTERNAL_ID)
   })
 
   it('completes order without Payout when no CAPTURED Transaction exists (FIXED-mode)', async () => {
@@ -299,12 +408,104 @@ describe('completeOrder — Payout commission record creation', () => {
 
     const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_2 } })
     expect(order!.status).toBe(OrderStatus.COMPLETED)
-    const payout = await testPrisma.payout.findFirst({ where: { orderId: TEST_ORDER_ID_2 } })
-    expect(payout).toBeNull()
+    const payouts = await testPrisma.payout.findMany({ where: { orderId: TEST_ORDER_ID_2 } })
+    expect(payouts).toHaveLength(0)
   })
 })
 
 describe('processPaymentFailed', () => {
+  it('returns early on duplicate delivery when IdempotencyKey already exists for the EXPIRED key', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_3,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.PAYMENT_PENDING,
+        quantity: 1,
+      },
+    })
+    await testPrisma.transaction.create({
+      data: {
+        id: 'test-tx-idem-expired',
+        orderId: TEST_ORDER_ID_3,
+        externalId: TEST_TX_EXTERNAL_ID_5,
+        provider: 'xendit',
+        amount: '1500.00',
+        status: TransactionStatus.PENDING,
+      },
+    })
+    await testPrisma.idempotencyKey.create({
+      data: { key: `xendit:invoice:EXPIRED:${TEST_TX_EXTERNAL_ID_5}` },
+    })
+
+    const payload: XenditInvoicePayload = {
+      id: TEST_TX_EXTERNAL_ID_5,
+      status: 'EXPIRED',
+      paid_amount: 0,
+      payer_email: 'client@test.local',
+    }
+
+    await processPaymentFailed(payload)
+
+    const tx = await testPrisma.transaction.findUnique({ where: { externalId: TEST_TX_EXTERNAL_ID_5 } })
+    expect(tx!.status).toBe(TransactionStatus.PENDING)
+    const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_3 } })
+    expect(order!.status).toBe(OrderStatus.PAYMENT_PENDING)
+    const keys = await testPrisma.idempotencyKey.findMany({
+      where: { key: `xendit:invoice:EXPIRED:${TEST_TX_EXTERNAL_ID_5}` },
+    })
+    expect(keys).toHaveLength(1)
+  })
+
+  it('does NOT short-circuit when only the PAID IdempotencyKey exists for the same externalId', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_4,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.PAYMENT_PENDING,
+        quantity: 1,
+      },
+    })
+    await testPrisma.transaction.create({
+      data: {
+        id: 'test-tx-cross-event',
+        orderId: TEST_ORDER_ID_4,
+        externalId: TEST_TX_EXTERNAL_ID_6,
+        provider: 'xendit',
+        amount: '1500.00',
+        status: TransactionStatus.PENDING,
+      },
+    })
+    await testPrisma.idempotencyKey.create({
+      data: { key: `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_6}` },
+    })
+
+    const payload: XenditInvoicePayload = {
+      id: TEST_TX_EXTERNAL_ID_6,
+      status: 'EXPIRED',
+      paid_amount: 0,
+      payer_email: 'client@test.local',
+    }
+
+    await processPaymentFailed(payload)
+
+    const tx = await testPrisma.transaction.findUnique({ where: { externalId: TEST_TX_EXTERNAL_ID_6 } })
+    expect(tx!.status).toBe(TransactionStatus.FAILED)
+    const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_4 } })
+    expect(order!.status).toBe(OrderStatus.PAYMENT_FAILED)
+    const expiredKey = await testPrisma.idempotencyKey.findUnique({
+      where: { key: `xendit:invoice:EXPIRED:${TEST_TX_EXTERNAL_ID_6}` },
+    })
+    expect(expiredKey).not.toBeNull()
+    const paidKey = await testPrisma.idempotencyKey.findUnique({
+      where: { key: `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_6}` },
+    })
+    expect(paidKey).not.toBeNull()
+  })
+
   it('marks Transaction FAILED and transitions Order to PAYMENT_FAILED', async () => {
     await testPrisma.order.create({
       data: {
@@ -336,7 +537,7 @@ describe('processPaymentFailed', () => {
 
     await processPaymentFailed(payload)
 
-    const tx = await testPrisma.transaction.findFirst({ where: { externalId: TEST_TX_EXTERNAL_ID_4 } })
+    const tx = await testPrisma.transaction.findUnique({ where: { externalId: TEST_TX_EXTERNAL_ID_4 } })
     expect(tx!.status).toBe(TransactionStatus.FAILED)
     expect(tx!.failureReason).toMatch(/EXPIRED/)
     const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_1 } })

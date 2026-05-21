@@ -308,3 +308,15 @@ model LabWallet {
 
   @@map("lab_wallets")
 }
+
+// Provider-agnostic dedup row. Key format: provider:product:event:externalId
+// e.g. xendit:invoice:PAID:{invoiceId}, xendit:invoice:EXPIRED:{invoiceId},
+// xendit:settlement:COMPLETED:{settlementId}.
+// processedAt is informational (no TTL — append-only at current scale).
+model IdempotencyKey {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  processedAt DateTime @default(now())
+
+  @@map("idempotency_keys")
+}

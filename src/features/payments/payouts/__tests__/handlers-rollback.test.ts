@@ -1,13 +1,15 @@
 /**
  * Rollback error propagation tests using a full Prisma mock. (ref: DL-011)
  * Real DB cannot exercise rollback isolation without schema-breaking teardown, so mocks
- * are used for this single concern. Confirms that errors from payout.update and
+ * are used for this single concern. Confirms that errors from payout.updateMany and
  * labWallet.update propagate out of $transaction, causing Xendit to receive 500 and retry.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { Decimal } from '@prisma/client/runtime/library'
 import { PayoutStatus } from '@prisma/client'
 
+const mockIdempotencyKeyFindUnique = vi.fn().mockResolvedValue(null)
+const mockIdempotencyKeyCreate = vi.fn().mockResolvedValue({ key: 'xendit:settlement:COMPLETED:ext-settle-mock' })
 const mockPayoutFindUnique = vi.fn().mockResolvedValue(null)
 const mockPayoutFindFirst = vi.fn().mockResolvedValue({
   id: 'mock-payout-id',
@@ -26,6 +28,10 @@ const mockPayoutUpdateMany = vi.fn().mockResolvedValue({ count: 1 })
 const mockWalletUpdate = vi.fn().mockRejectedValue(new Error('wallet-update-failure'))
 
 const mockTx = {
+  idempotencyKey: {
+    findUnique: mockIdempotencyKeyFindUnique,
+    create: mockIdempotencyKeyCreate,
+  },
   payout: {
     findUnique: mockPayoutFindUnique,
     findFirst: mockPayoutFindFirst,
@@ -62,5 +68,12 @@ describe('processSettlement — rollback error propagation', () => {
     mockPayoutUpdateMany.mockRejectedValueOnce(new Error('payout-update-failure'))
 
     await expect(processSettlement(basePayload)).rejects.toThrow('payout-update-failure')
+  })
+
+  it('rejects when idempotencyKey.create throws, confirming key creation participates in transaction atomicity', async () => {
+    mockWalletUpdate.mockResolvedValueOnce({})
+    mockIdempotencyKeyCreate.mockRejectedValueOnce(new Error('idempotency-create-failure'))
+
+    await expect(processSettlement(basePayload)).rejects.toThrow('idempotency-create-failure')
   })
 })

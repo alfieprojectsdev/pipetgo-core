@@ -21,6 +21,13 @@ export async function processSettlement(payload: XenditSettlementPayload): Promi
   console.info(`[processSettlement] enter id=${payload.id} external_id=${payload.external_id}`)
 
   await prisma.$transaction(async (tx) => {
+    const idempotencyKey = `xendit:settlement:COMPLETED:${payload.id}`
+    const existingKey = await tx.idempotencyKey.findUnique({ where: { key: idempotencyKey } })
+    if (existingKey) {
+      console.info(`[processSettlement] dedup key hit key=${idempotencyKey}`)
+      return
+    }
+
     // Step 1: idempotency check — look up by externalPayoutId (@unique, Implementation Discipline).
     let payout = await tx.payout.findUnique({
       where: { externalPayoutId: payload.id },
@@ -115,5 +122,7 @@ export async function processSettlement(payload: XenditSettlementPayload): Promi
         availableBalance: { increment: payout.platformFee },
       },
     })
+
+    await tx.idempotencyKey.create({ data: { key: idempotencyKey } })
   })
 }
