@@ -3,7 +3,7 @@ import { OrderStatus, TransactionStatus, UserRole, ServiceCategory, PricingMode,
 import { testPrisma } from '@/test/test-prisma'
 import { processPaymentCapture, processPaymentFailed } from '../handlers'
 import { completeOrder } from '@/features/orders/lab-fulfillment/action'
-import type { XenditInvoicePayload } from '../types'
+import type { NormalizedWebhookPayload } from '@/lib/payments/types'
 
 vi.mock('@/lib/prisma', async () => {
   const { testPrisma: client } = await import('@/test/test-prisma')
@@ -137,12 +137,9 @@ describe('processPaymentCapture', () => {
       },
     })
 
-    const payload: XenditInvoicePayload = {
-      id: TEST_TX_EXTERNAL_ID_1,
-      status: 'PAID',
-      paid_amount: 1500,
-      payer_email: 'client@test.local',
-      payment_method: 'CREDIT_CARD',
+    const payload: NormalizedWebhookPayload = {
+      externalId: TEST_TX_EXTERNAL_ID_1,
+      paymentMethod: 'CREDIT_CARD',
     }
 
     await processPaymentCapture(payload)
@@ -178,11 +175,8 @@ describe('processPaymentCapture', () => {
       },
     })
 
-    const payload: XenditInvoicePayload = {
-      id: TEST_TX_EXTERNAL_ID_2,
-      status: 'PAID',
-      paid_amount: 1500,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: TEST_TX_EXTERNAL_ID_2,
     }
 
     await processPaymentCapture(payload)
@@ -213,11 +207,8 @@ describe('processPaymentCapture', () => {
       },
     })
 
-    const payload: XenditInvoicePayload = {
-      id: TEST_TX_EXTERNAL_ID_3,
-      status: 'PAID',
-      paid_amount: 1500,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: TEST_TX_EXTERNAL_ID_3,
     }
 
     await processPaymentCapture(payload)
@@ -251,11 +242,8 @@ describe('processPaymentCapture', () => {
       data: { key: `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_5}` },
     })
 
-    const payload: XenditInvoicePayload = {
-      id: TEST_TX_EXTERNAL_ID_5,
-      status: 'PAID',
-      paid_amount: 1500,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: TEST_TX_EXTERNAL_ID_5,
     }
 
     await processPaymentCapture(payload)
@@ -292,11 +280,8 @@ describe('processPaymentCapture', () => {
       },
     })
 
-    const payload: XenditInvoicePayload = {
-      id: TEST_TX_EXTERNAL_ID_6,
-      status: 'PAID',
-      paid_amount: 1500,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: TEST_TX_EXTERNAL_ID_6,
     }
 
     await processPaymentCapture(payload)
@@ -333,11 +318,8 @@ describe('processPaymentCapture', () => {
       },
     })
 
-    const payload: XenditInvoicePayload = {
-      id: TEST_TX_EXTERNAL_ID_4,
-      status: 'PAID',
-      paid_amount: 1500,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: TEST_TX_EXTERNAL_ID_4,
     }
 
     await expect(processPaymentCapture(payload)).rejects.toThrow(/FAILED/)
@@ -442,11 +424,8 @@ describe('processPaymentFailed', () => {
       data: { key: `xendit:invoice:EXPIRED:${TEST_TX_EXTERNAL_ID_5}` },
     })
 
-    const payload: XenditInvoicePayload = {
-      id: TEST_TX_EXTERNAL_ID_5,
-      status: 'EXPIRED',
-      paid_amount: 0,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: TEST_TX_EXTERNAL_ID_5,
     }
 
     await processPaymentFailed(payload)
@@ -486,11 +465,8 @@ describe('processPaymentFailed', () => {
       data: { key: `xendit:invoice:PAID:${TEST_TX_EXTERNAL_ID_6}` },
     })
 
-    const payload: XenditInvoicePayload = {
-      id: TEST_TX_EXTERNAL_ID_6,
-      status: 'EXPIRED',
-      paid_amount: 0,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: TEST_TX_EXTERNAL_ID_6,
     }
 
     await processPaymentFailed(payload)
@@ -531,11 +507,8 @@ describe('processPaymentFailed', () => {
       },
     })
 
-    const payload: XenditInvoicePayload = {
-      id: TEST_TX_EXTERNAL_ID_4,
-      status: 'EXPIRED',
-      paid_amount: 0,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: TEST_TX_EXTERNAL_ID_4,
     }
 
     await processPaymentFailed(payload)
@@ -570,11 +543,8 @@ describe('processPaymentFailed', () => {
       },
     })
 
-    const payload: XenditInvoicePayload = {
-      id: TEST_TX_EXTERNAL_ID_4,
-      status: 'EXPIRED',
-      paid_amount: 0,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: TEST_TX_EXTERNAL_ID_4,
     }
 
     await processPaymentFailed(payload)
@@ -584,11 +554,8 @@ describe('processPaymentFailed', () => {
   })
 
   it('returns without error when Transaction is not found (orphan tolerance)', async () => {
-    const payload: XenditInvoicePayload = {
-      id: 'xendit-unknown-ext-id',
-      status: 'EXPIRED',
-      paid_amount: 0,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: 'xendit-unknown-ext-id',
     }
 
     await expect(processPaymentFailed(payload)).resolves.not.toThrow()

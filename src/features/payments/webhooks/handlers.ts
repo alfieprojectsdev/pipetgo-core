@@ -10,7 +10,7 @@ import { prisma } from '@/lib/prisma'
 import { PaymentCapturedEvent } from '@/domain/payments/events'
 import { handlePaymentCaptured } from '@/features/orders/handle-payment-captured/handler'
 import { isValidStatusTransition } from '@/domain/orders/state-machine'
-import type { XenditInvoicePayload } from './types'
+import type { NormalizedWebhookPayload } from '@/lib/payments/types'
 
 /**
  * Finds the Transaction by Xendit invoice ID, marks it CAPTURED, and dispatches
@@ -18,13 +18,17 @@ import type { XenditInvoicePayload } from './types'
  * No LabWallet write; commission is tracked via Payout records created inside
  * completeOrder at order completion. (ref: DL-001, DL-016)
  *
- * Returns early (200 to caller) if Transaction is not found (orphan tolerance) or
- * already CAPTURED (idempotency). Both guards are inside the transaction boundary
- * to prevent race conditions from concurrent Xendit deliveries. (ref: DL-004, DL-007)
+ * Dedup uses two layers: (1) IdempotencyKey row with key xendit:invoice:PAID:{id} —
+ * checked first, created last inside the $transaction; key persistence is atomically
+ * tied to business-write success; a handler throw rolls back the key so Xendit retries
+ * land on an empty lookup. (ref: DL-002, DL-007) (2) Transaction.status===CAPTURED guard —
+ * enforces the terminal-CAPTURED state-machine invariant independent of dedup. (ref: DL-004)
+ * Both layers required; see README.md Idempotency section.
  */
-export async function processPaymentCapture(payload: XenditInvoicePayload): Promise<void> {
+export async function processPaymentCapture(payload: NormalizedWebhookPayload): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    const idempotencyKey = `xendit:invoice:PAID:${payload.id}`
+    // xendit: prefix format is deployed; changing it requires migrating idempotency_keys rows. (ref: DL-005)
+    const idempotencyKey = `xendit:invoice:PAID:${payload.externalId}`
     const existing = await tx.idempotencyKey.findUnique({ where: { key: idempotencyKey } })
     if (existing) {
       console.info(`[processPaymentCapture] dedup key hit key=${idempotencyKey}`)
@@ -34,7 +38,7 @@ export async function processPaymentCapture(payload: XenditInvoicePayload): Prom
     // Lookup by externalId (Xendit invoice ID), not Transaction.id (our cuid). (ref: DL-004)
     // findUnique enforces the @unique constraint at query level (Implementation Discipline).
     const transaction = await tx.transaction.findUnique({
-      where: { externalId: payload.id },
+      where: { externalId: payload.externalId },
     })
 
     if (!transaction) {
@@ -49,7 +53,7 @@ export async function processPaymentCapture(payload: XenditInvoicePayload): Prom
 
     if (transaction.status === TransactionStatus.FAILED) {
       // EXPIRED-then-PAID concurrent delivery: refuse to overwrite terminal FAILED with CAPTURED. (ref: R-007)
-      console.info(`[processPaymentCapture] received PAID for FAILED transaction id=${payload.id}`)
+      console.info(`[processPaymentCapture] received PAID for FAILED transaction id=${payload.externalId}`)
       throw new Error(`Refusing to capture FAILED transaction ${transaction.id}: EXPIRED already terminal`)
     }
 
@@ -60,7 +64,7 @@ export async function processPaymentCapture(payload: XenditInvoicePayload): Prom
       data: {
         status: TransactionStatus.CAPTURED,
         capturedAt,
-        paymentMethod: payload.payment_method ?? null,
+        paymentMethod: payload.paymentMethod ?? null,
       },
     })
 
@@ -72,7 +76,7 @@ export async function processPaymentCapture(payload: XenditInvoicePayload): Prom
       amount: transaction.amount,
       gatewayRef: transaction.externalId,
       capturedAt,
-      paymentMethod: payload.payment_method,
+      paymentMethod: payload.paymentMethod,
     }
 
     // Delegates Order.status transition to orders slice — ADR-001 fan-out pattern. (ref: DL-001)
@@ -83,16 +87,21 @@ export async function processPaymentCapture(payload: XenditInvoicePayload): Prom
 }
 
 /**
- * Marks Transaction FAILED and transitions Order PAYMENT_PENDING→PAYMENT_FAILED.
- * Mirrors processPaymentCapture: same $transaction boundary, orphan tolerance,
- * idempotency-by-terminal-status. (ref: DL-001)
- * No LabWallet write — failed payments produce no lab credit. (ref: DL-007)
+ * Marks Transaction FAILED and transitions Order PAYMENT_PENDING→PAYMENT_FAILED
+ * within one $transaction. Mirrors processPaymentCapture structure: same dedup layers,
+ * orphan tolerance, no LabWallet write (failed payments produce no lab credit). (ref: DL-001)
+ *
+ * Dedup Layer 1: IdempotencyKey key xendit:invoice:EXPIRED:{id} — checked first, created
+ * last. (ref: DL-002) Layer 2: Transaction.status===FAILED guard (idempotent no-op) and
+ * status===CAPTURED guard (PAID-then-EXPIRED concurrent delivery — return early rather
+ * than throw, because CAPTURED is the correct terminal state). Both layers required.
  */
-export async function processPaymentFailed(payload: XenditInvoicePayload): Promise<void> {
-  console.info(`[processPaymentFailed] enter id=${payload.id} status=${payload.status}`)
+export async function processPaymentFailed(payload: NormalizedWebhookPayload): Promise<void> {
+  console.info(`[processPaymentFailed] enter id=${payload.externalId}`)
 
   await prisma.$transaction(async (tx) => {
-    const idempotencyKey = `xendit:invoice:EXPIRED:${payload.id}`
+    // xendit: prefix format is deployed; changing it requires migrating idempotency_keys rows. (ref: DL-005)
+    const idempotencyKey = `xendit:invoice:EXPIRED:${payload.externalId}`
     const existing = await tx.idempotencyKey.findUnique({ where: { key: idempotencyKey } })
     if (existing) {
       console.info(`[processPaymentFailed] dedup key hit key=${idempotencyKey}`)
@@ -101,17 +110,17 @@ export async function processPaymentFailed(payload: XenditInvoicePayload): Promi
 
     // findUnique enforces the @unique constraint at query level (Implementation Discipline).
     const transaction = await tx.transaction.findUnique({
-      where: { externalId: payload.id },
+      where: { externalId: payload.externalId },
     })
 
     if (!transaction) {
-      console.info(`[processPaymentFailed] orphan tolerance id=${payload.id}`)
+      console.info(`[processPaymentFailed] orphan tolerance id=${payload.externalId}`)
       return
     }
 
     if (transaction.status === TransactionStatus.FAILED) {
       // Idempotency guard — inside $transaction to close concurrent-delivery race. (ref: DL-004)
-      console.info(`[processPaymentFailed] idempotent no-op id=${payload.id}`)
+      console.info(`[processPaymentFailed] idempotent no-op id=${payload.externalId}`)
       return
     }
 
@@ -120,7 +129,7 @@ export async function processPaymentFailed(payload: XenditInvoicePayload): Promi
       // Symmetric guard to processPaymentCapture R-007. The state machine would throw below
       // (ACKNOWLEDGED→PAYMENT_FAILED is invalid), but this guard makes the intent explicit
       // so a future developer does not interpret the asymmetry as an oversight.
-      console.info(`[processPaymentFailed] received EXPIRED for CAPTURED transaction id=${payload.id}`)
+      console.info(`[processPaymentFailed] received EXPIRED for CAPTURED transaction id=${payload.externalId}`)
       return
     }
 
@@ -128,7 +137,7 @@ export async function processPaymentFailed(payload: XenditInvoicePayload): Promi
       where: { id: transaction.id },
       data: {
         status: TransactionStatus.FAILED,
-        failureReason: `Xendit invoice ${payload.status}`,
+        failureReason: 'Xendit invoice EXPIRED',
       },
     })
 
