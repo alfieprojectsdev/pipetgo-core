@@ -1,6 +1,6 @@
 # order-detail/
 
-Vertical slice: CLIENT views a single order by ID. Read-only; no actions.
+Vertical slice: CLIENT views a single order by ID.
 
 Route: `/dashboard/orders/[orderId]`
 Auth:  CLIENT role only; redirects to `/auth/signin` otherwise.
@@ -10,8 +10,8 @@ Guard: Renders 404 for any order that does not belong to the authenticated clien
 
 | File        | What                                                                             | When to read                                                         |
 | ----------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `page.tsx`  | Async RSC — CLIENT auth guard, ownership guard, Decimal/Date DTO, full render   | Modifying auth gate, order fetch, DTO fields, badge map, or timeline |
-| `ui.tsx`    | `'use client'` — `OrderDetailQuoteActions` (Accept/Reject, QUOTE_PROVIDED), `OrderDetailRetryPayment` (Retry Payment, PAYMENT_FAILED) | Modifying action panel layout or error display |
+| `page.tsx`  | Async RSC — CLIENT auth guard, ownership guard, Decimal/Date DTO, full render; includes `transactions` (take: 1, desc) for `vaNumber`/`transactionPaymentMethod`; renders `OrderDetailVaBankSelector` (PAYMENT_PENDING, no VA, above PHP 50k) or `OrderDetailVaInstructions` (VA created) | Modifying auth gate, order fetch, DTO fields, badge map, timeline, or VA display logic |
+| `ui.tsx`    | `'use client'` — `OrderDetailQuoteActions` (Accept/Reject, QUOTE_PROVIDED), `OrderDetailRetryPayment` (PAYMENT_FAILED), `OrderDetailVaBankSelector` (bank code selector, calls `initiateVaCheckout`), `OrderDetailVaInstructions` (VA number + transfer details) | Modifying action panel layout, VA bank selector, or VA instructions display |
 | `action.ts` | `acceptQuote` (QUOTE_PROVIDED→PAYMENT_PENDING, redirect to checkout), `rejectQuote` (→QUOTE_REJECTED), `retryPayment` (PAYMENT_FAILED→PAYMENT_PENDING, redirect to checkout) | Modifying accept/reject/retry transitions |
 
 ## Invariants

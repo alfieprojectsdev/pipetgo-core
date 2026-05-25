@@ -89,12 +89,12 @@ T-09 Commission record on completion       [done — PR #9] [planner]
 T-12 Attachment uploads                    [blocked: T-06, storage decision] [planner]
 T-13 Admin panel                           [blocked: T-01, post-MVP] [planner]
 
-T-14 Payment provider normalization        [up next — refactor, no feature deps] [planner]
+T-14 Payment provider normalization        [done — PR #13] [planner]
 
 ── Phase 2 infrastructure ──────────────────────────────────────────────────
 T-15 Lab KYC document upload              [blocked: T-02] [planner]
 T-16 Idempotency key table                [done — PR #12] [planner]
-T-17 PESONet virtual account integration  [blocked: T-14, payment research] [planner]
+T-17 PESONet virtual account integration  [PR #14 open] [planner]
 
 ── Phase 3 regulatory ──────────────────────────────────────────────────────
 T-18 Lab accreditation verification       [blocked: T-02, T-13] [planner]
@@ -154,7 +154,7 @@ Depends on Phase 2 completing. T-14 is the prerequisite for T-17.
 |--------|----------------|----------|-------|
 | T-10 Commission settlement webhook | T-09 ✅ | 2 | ✅ done (PR #10) |
 | T-11 Lab wallet dashboard | T-10 ✅ | 1 | ✅ done (PR #11) |
-| T-14 Payment provider normalization | ready now | 3 | Complex refactor; AD-002 expanded scope — **up next** |
+| T-14 Payment provider normalization | ready now ✅ | 3 | ✅ done (PR #13) — NormalizedWebhookPayload boundary; verifyXenditToken; route.ts sole Xendit-aware file |
 
 **End state:** Financial flows closed. Xendit→PayMongo migration path ready (T-14 done).
 
@@ -460,7 +460,7 @@ Lab verification (`isVerified`), user role management, order oversight.
 
 ### T-14 — Payment provider normalization `[planner]`
 **Branch:** `feat/T14-payment-provider-normalization`
-**Status:** up next (refactor, no feature dependencies)
+**Status:** done (PR #13)
 **Why planner:** Cross-cutting refactor across `src/lib/payments/`, `src/features/payments/webhooks/`, and `src/domain/payments/`. The plan must define `NormalizedWebhookPayload`, the webhook auth abstraction interface, the location of per-provider verifier functions, and confirm that existing webhook tests pass without modification after the boundary moves.
 
 **Scope (expanded per AD-002):** The normalization layer must abstract two things, not one:
@@ -673,3 +673,4 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | T-11 Lab wallet dashboard | PR #11 `b3cd3d8` | /dashboard/lab/wallet — balance cards (pending/available/withdrawn), Payout history table with PayoutStatus badges; satisfies Record<PayoutStatus> exhaustiveness guard |
 | E1 integrity guard split | PR #12 `aa23d67` | Split compound `!order \|\| !order.lab` guards in quote-provide and lab-fulfillment pages; referential integrity violations now throw instead of calling notFound() |
 | T-16 Idempotency key table | PR #12 `aa23d67` | IdempotencyKey model; dedup key check+create in all three Xendit webhook handlers (PAID, EXPIRED, settlement); create-last invariant; three-layer dedup model |
+| T-14 Payment provider normalization | PR #13 `38546f6` | NormalizedWebhookPayload boundary; verifyXenditToken + HMAC stubs; normalizeXenditInvoicePayload adapter; route.ts sole Xendit-aware file; handlers accept only NormalizedWebhookPayload; tx.transaction.updateMany guard |

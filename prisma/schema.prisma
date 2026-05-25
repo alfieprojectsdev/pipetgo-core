@@ -249,6 +249,7 @@ model Transaction {
   status        TransactionStatus @default(PENDING)
   paymentMethod String?
   checkoutUrl   String?
+  vaNumber      String?
   failureReason String?
   metadata      Json?
   capturedAt    DateTime?
@@ -312,6 +313,7 @@ model LabWallet {
 // Provider-agnostic dedup row. Key format: provider:product:event:externalId
 // e.g. xendit:invoice:PAID:{invoiceId}, xendit:invoice:EXPIRED:{invoiceId},
 // xendit:settlement:COMPLETED:{settlementId}.
+// xendit:va:PAID:{fvaId}, xendit:va:EXPIRED:{fvaId}.
 // processedAt is informational (no TTL — append-only at current scale).
 model IdempotencyKey {
   id          String   @id @default(cuid())
