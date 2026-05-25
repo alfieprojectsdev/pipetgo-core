@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { acceptQuote, rejectQuote, retryPayment } from './action'
 import { initiateVaCheckout } from '@/features/payments/checkout/action'
-import { PESONET_BANK_CODES, PESONET_BANK_LABELS, type PesonetBankCode } from '@/domain/payments/pesonet'
+import { PESONET_BANK_CODES, PESONET_BANK_LABELS, isPesonetBankCode } from '@/domain/payments/pesonet'
 
 export function OrderDetailQuoteActions({
   orderId,
@@ -66,7 +66,10 @@ export function OrderDetailVaInstructions({
             <div className="flex justify-between py-2">
               <dt className="text-gray-500">Bank</dt>
               <dd className="text-gray-900 font-medium">
-                {PESONET_BANK_LABELS[bankCode as PesonetBankCode] ?? bankCode}
+                {(() => {
+                  if (!isPesonetBankCode(bankCode)) throw new Error(`Unexpected PESONet bank code: ${bankCode}`)
+                  return PESONET_BANK_LABELS[bankCode]
+                })()}
               </dd>
             </div>
           )}

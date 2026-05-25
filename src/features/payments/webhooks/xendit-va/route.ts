@@ -45,6 +45,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const status = (payload.status ?? '').toUpperCase()
+  if (status === '') {
+    throw new Error('Xendit VA webhook missing payload.status')
+  }
   console.info(`[va-webhook] callback_virtual_account_id=${payload.callback_virtual_account_id} status=${status}`)
 
   try {

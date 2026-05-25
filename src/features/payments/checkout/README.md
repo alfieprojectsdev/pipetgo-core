@@ -33,11 +33,11 @@ action.ts — initiateCheckout (Server Action)
 
 ### VA flow
 
-```
+```text
 bank selector form
   -> initiateVaCheckout (Server Action)
   -> bank code + amount validation
-  -> createXenditVa() [src/lib/payments/xendit.ts] — BEFORE Prisma write
+  -> createXenditVa() [src/lib/payments/xendit-va.ts] — BEFORE Prisma write
   -> prisma.transaction.create (vaNumber = account_number from Xendit response)
   -> redirect(/dashboard/orders/{orderId})
 ```

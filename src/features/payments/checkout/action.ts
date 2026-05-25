@@ -201,7 +201,7 @@ export async function initiateVaCheckout(
     if (err instanceof XenditVaError) {
       return { message: 'Payment service error. Please try again.' }
     }
-    return { message: 'Unable to reach payment service. Please try again later.' }
+    throw err
   }
 
   // redirect() after try/catch — Next.js throws NEXT_REDIRECT internally

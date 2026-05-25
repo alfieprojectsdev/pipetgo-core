@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { OrderStatus, PricingMode } from '@prisma/client'
+import { OrderStatus, PricingMode, TransactionStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -188,6 +188,7 @@ export default async function OrderDetailPage({
       lab:     { select: { name: true } },
       clientProfile: true,
       transactions: {
+        where: { status: TransactionStatus.PENDING },
         orderBy: { createdAt: 'desc' },
         take: 1,
       },

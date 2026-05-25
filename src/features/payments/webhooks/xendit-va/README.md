@@ -55,7 +55,7 @@ Identical two-layer structure to the invoice webhook:
 |---|---|---|
 | Full-amount only | `expected_amount = Transaction.amount.toNumber()` | Xendit only fires COMPLETED when the exact amount is received |
 | Single-payment | `is_closed: true` | VA auto-closes after first deposit; prevents double-credit |
-| 72h expiry | `expiration_date = Date.now() + 72h` | Orphaned FVAs expire without manual cleanup; EXPIRED webhook arrives as no-op |
+| 72h expiry | `expiration_date = Date.now() + 72h` | Orphaned FVAs expire without manual cleanup; EXPIRED webhook transitions payment to FAILED |
 
 ## EXPIRED / FAILED recovery
 

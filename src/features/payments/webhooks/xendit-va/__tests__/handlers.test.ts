@@ -166,6 +166,7 @@ describe('xendit-va webhook — processPaymentFailed (EXPIRED)', () => {
 
     const tx = await testPrisma.transaction.findUnique({ where: { externalId: TEST_FVA_EXT_ID_2 } })
     expect(tx!.status).toBe(TransactionStatus.FAILED)
+    expect(tx!.failureReason).toBe('Xendit VA EXPIRED')
 
     const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_2 } })
     expect(order!.status).toBe(OrderStatus.PAYMENT_FAILED)
