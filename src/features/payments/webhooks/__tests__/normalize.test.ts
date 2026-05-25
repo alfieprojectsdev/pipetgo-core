@@ -46,4 +46,9 @@ describe('normalizeXenditInvoicePayload', () => {
     const raw = { id: 12345, status: 'PAID', paid_amount: 0, payer_email: 'x@x.com' } as unknown as XenditInvoicePayload
     expect(() => normalizeXenditInvoicePayload(raw)).toThrow(/missing required id/)
   })
+
+  it('throws when payload.id is whitespace-only', () => {
+    const raw: XenditInvoicePayload = { id: '   ', status: 'PAID', paid_amount: 0, payer_email: 'x@x.com' }
+    expect(() => normalizeXenditInvoicePayload(raw)).toThrow(/missing required id/)
+  })
 })

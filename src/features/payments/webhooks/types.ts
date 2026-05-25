@@ -23,7 +23,7 @@ export interface XenditInvoicePayload {
  * rejected at the route boundary with a 400 rather than propagating as a 500. (ref: DL-015)
  */
 export function normalizeXenditInvoicePayload(raw: XenditInvoicePayload): NormalizedWebhookPayload {
-  if (!raw.id || typeof raw.id !== 'string') {
+  if (typeof raw.id !== 'string' || raw.id.trim() === '') {
     throw new Error('Xendit payload missing required id field')
   }
   return {

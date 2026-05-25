@@ -27,23 +27,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
   }
 
-  const payload = (await req.json()) as XenditInvoicePayload
-
-  const status = (payload.status ?? '').toUpperCase()
-  console.info(`[webhook] received payload id=${payload.id} status=${status}`)
-
-  if (status === '') {
-    throw new Error('Xendit webhook missing payload.status')
-  }
-
+  let payload: XenditInvoicePayload
   let normalized
   try {
+    const parsed = (await req.json()) as unknown
+    if (!parsed || typeof parsed !== 'object') {
+      return NextResponse.json({ error: 'Malformed Xendit payload.' }, { status: 400 })
+    }
+    payload = parsed as XenditInvoicePayload
     normalized = normalizeXenditInvoicePayload(payload)
   } catch (err) {
     if (err instanceof Error) {
       return NextResponse.json({ error: err.message }, { status: 400 })
     }
     throw err
+  }
+
+  const status = (payload.status ?? '').toUpperCase()
+  console.info(`[webhook] received payload id=${payload.id} status=${status}`)
+
+  if (status === '') {
+    throw new Error('Xendit webhook missing payload.status')
   }
 
   switch (status) {

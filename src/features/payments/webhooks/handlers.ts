@@ -59,14 +59,15 @@ export async function processPaymentCapture(payload: NormalizedWebhookPayload): 
 
     const capturedAt = new Date()
 
-    await tx.transaction.update({
-      where: { id: transaction.id },
+    const captureResult = await tx.transaction.updateMany({
+      where: { id: transaction.id, status: transaction.status },
       data: {
         status: TransactionStatus.CAPTURED,
         capturedAt,
         paymentMethod: payload.paymentMethod ?? null,
       },
     })
+    if (captureResult.count === 0) return
 
     // amount from Transaction.amount (Decimal), not payload.paid_amount (float) —
     // avoids floating-point drift; amount was validated at checkout creation. (ref: DL-005)
@@ -133,13 +134,14 @@ export async function processPaymentFailed(payload: NormalizedWebhookPayload): P
       return
     }
 
-    await tx.transaction.update({
-      where: { id: transaction.id },
+    const failResult = await tx.transaction.updateMany({
+      where: { id: transaction.id, status: transaction.status },
       data: {
         status: TransactionStatus.FAILED,
         failureReason: 'Xendit invoice EXPIRED',
       },
     })
+    if (failResult.count === 0) return
 
     const order = await tx.order.findUnique({
       where: { id: transaction.orderId },

@@ -17,7 +17,7 @@ and Order records atomically.
    - Other non-empty statuses → acknowledged without processing (200, no DB write)
    - Empty/missing status → throws (500) so Xendit retries
 
-   After dispatch, `route.ts` calls `normalizeXenditInvoicePayload` (defined in
+   Before dispatch, `route.ts` calls `normalizeXenditInvoicePayload` (defined in
    `webhooks/types.ts`) to construct a provider-agnostic `NormalizedWebhookPayload`
    before invoking `processPaymentCapture` or `processPaymentFailed`.
 4. `handlers.ts:processPaymentCapture` runs a Prisma `$transaction` (PAID path):
