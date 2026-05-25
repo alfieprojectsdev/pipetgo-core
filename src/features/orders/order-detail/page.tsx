@@ -3,7 +3,8 @@ import { OrderStatus, PricingMode } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { OrderDetailQuoteActions, OrderDetailRetryPayment } from './ui'
+import { OrderDetailQuoteActions, OrderDetailRetryPayment, OrderDetailVaInstructions, OrderDetailVaBankSelector } from './ui'
+import { PESONET_MIN_AMOUNT } from '@/domain/payments/pesonet'
 
 // Intentionally duplicated from clients/dashboard/ui.tsx — cross-slice import violates ADR-001.
 // Typed Record<OrderStatus, ...> so a missing enum value is a compile error at build time.
@@ -41,6 +42,8 @@ export type OrderDetailDTO = {
   clientAddress: string | null
   quantity: number
   notes: string | null
+  vaNumber: string | null
+  transactionPaymentMethod: string | null
 }
 
 type TimelineStep = {
@@ -184,6 +187,10 @@ export default async function OrderDetailPage({
       service: { select: { name: true, pricingMode: true } },
       lab:     { select: { name: true } },
       clientProfile: true,
+      transactions: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
     },
   })
 
@@ -207,6 +214,8 @@ export default async function OrderDetailPage({
     clientAddress: order.clientProfile?.address ?? null,
     quantity: order.quantity,
     notes: order.notes ?? null,
+    vaNumber: order.transactions[0]?.vaNumber ?? null,
+    transactionPaymentMethod: order.transactions[0]?.paymentMethod ?? null,
   }
 
   const badge = statusBadgeConfig[dto.status as OrderStatus] ??
@@ -371,6 +380,19 @@ export default async function OrderDetailPage({
 
         {dto.status === 'PAYMENT_FAILED' && (
           <OrderDetailRetryPayment orderId={dto.id} />
+        )}
+
+        {dto.status === 'PAYMENT_PENDING' && dto.vaNumber != null && (
+          <OrderDetailVaInstructions
+            bankCode={dto.transactionPaymentMethod}
+            vaNumber={dto.vaNumber}
+            quotedPrice={dto.quotedPrice ?? '0.00'}
+          />
+        )}
+
+        {dto.status === 'PAYMENT_PENDING' && dto.vaNumber == null &&
+          dto.quotedPrice != null && Number(dto.quotedPrice) > PESONET_MIN_AMOUNT && (
+          <OrderDetailVaBankSelector orderId={dto.id} />
         )}
 
         {dto.status === 'QUOTE_REJECTED' && (

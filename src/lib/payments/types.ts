@@ -16,4 +16,6 @@
 export interface NormalizedWebhookPayload {
   externalId: string
   paymentMethod?: string
+  idempotencyKeyPrefix?: string
+  failureReason?: string
 }

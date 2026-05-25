@@ -10,6 +10,8 @@ Xendit confirms payment.
 
 ## Architecture
 
+### Invoice flow
+
 ```
 page.tsx (RSC)
   -> auth() — CLIENT only; redirect /auth/signin otherwise
@@ -20,7 +22,7 @@ page.tsx (RSC)
        -> useActionState(initiateCheckout)
        -> <form action={formAction}>  (hidden orderId input)
 
-action.ts (Server Action)
+action.ts — initiateCheckout (Server Action)
   -> TOCTOU re-fetch: re-verify clientId + status === PAYMENT_PENDING
   -> idempotency guard: PENDING Transaction by orderId -> redirect(checkoutUrl)
   -> createId() -> transactionId (used as Transaction.id AND Xendit external_id param)
@@ -29,7 +31,25 @@ action.ts (Server Action)
   -> redirect(checkoutUrl)
 ```
 
+### VA flow
+
+```
+bank selector form
+  -> initiateVaCheckout (Server Action)
+  -> bank code + amount validation
+  -> createXenditVa() [src/lib/payments/xendit.ts] — BEFORE Prisma write
+  -> prisma.transaction.create (vaNumber = account_number from Xendit response)
+  -> redirect(/dashboard/orders/{orderId})
+```
+
 ## Design Decisions
+
+**`initiateVaCheckout` is a separate Server Action — not a discriminator branch in `initiateCheckout`**:
+The two flows diverge at step 3 (Xendit API call: `createXenditInvoice` vs `createXenditVa`),
+idempotency guard behavior (VA returns an error rather than a `checkoutUrl` redirect on duplicate),
+and Transaction shape (`vaNumber` column populated, no `checkoutUrl`). Two named actions are
+independently testable; a single action with a payment-method discriminator would require
+branching every assertion in every test.
 
 **TOCTOU guard — re-fetch Order in action (DL-004 / context invariant)**: The action
 re-fetches the Order from the DB and re-verifies `clientId + status === PAYMENT_PENDING`
@@ -86,6 +106,9 @@ features may import from `src/lib/`, but `src/lib/` must not import from `src/fe
   `NEXT_REDIRECT` internally; catching it swallows the redirect silently.
 - `Order.status` is never mutated by this slice. The webhook handler is the sole
   writer of status transitions for PAYMENT_PENDING orders.
+- `initiateVaCheckout` redirects to `/dashboard/orders/{orderId}` — not a Xendit-hosted
+  URL — because FVA has no hosted payment page. The VA number displayed on order-detail
+  IS the payment instruction.
 - `Transaction.provider` is the string literal `'xendit'` — the schema column is
   `String`, not an enum, to remain provider-agnostic.
 - `CheckoutOrderDTO` fields are all `string` — no `Prisma.Decimal` or `Date` objects

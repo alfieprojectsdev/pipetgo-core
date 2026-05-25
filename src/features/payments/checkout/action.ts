@@ -31,6 +31,8 @@ import { createId } from '@paralleldrive/cuid2'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { createXenditInvoice, XenditApiError } from '@/lib/payments/xendit'
+import { createXenditVa, XenditVaError } from '@/lib/payments/xendit-va'
+import { isPesonetBankCode, PESONET_MIN_AMOUNT } from '@/domain/payments/pesonet'
 
 type ActionState = { message?: string } | null
 
@@ -116,4 +118,92 @@ export async function initiateCheckout(
   }
 
   redirect(checkoutUrl)
+}
+
+export async function initiateVaCheckout(
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const orderId = formData.get('orderId') as string | null
+  const bankCode = formData.get('bankCode') as string | null
+  if (!orderId) return { message: 'Missing order ID.' }
+  if (!bankCode) return { message: 'Missing bank code.' }
+
+  const session = await auth()
+  if (!session || !session.user.id || session.user.role !== 'CLIENT') {
+    return { message: 'Unauthorized.' }
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { service: true },
+  })
+
+  if (!order || order.clientId !== session.user.id) {
+    return { message: 'Order not found.' }
+  }
+  if (order.status !== OrderStatus.PAYMENT_PENDING) {
+    return { message: 'Order is not awaiting payment.' }
+  }
+  if (!order.quotedPrice) {
+    return { message: 'Order does not have a quoted price.' }
+  }
+
+  // Amount threshold: server-side guard mirrors UI gate (dual-layer)
+  if (order.quotedPrice.toNumber() <= PESONET_MIN_AMOUNT) {
+    return { message: 'PESONet is only available for orders above ₱50,000.' }
+  }
+
+  // Bank code validation: allowlist enforced server-side to prevent injection
+  if (!isPesonetBankCode(bankCode)) {
+    return { message: 'Invalid bank code.' }
+  }
+
+  // Any existing PENDING Transaction blocks VA creation — prevents double VA for same order
+  const existingPending = await prisma.transaction.findFirst({
+    where: { orderId, status: TransactionStatus.PENDING },
+  })
+  if (existingPending) {
+    return { message: 'A payment is already in progress for this order.' }
+  }
+
+  const transactionId = createId()
+
+  let redirectPath: string
+  try {
+    // Xendit call before DB write: if DB fails, FVA expires in 72h (orphan tolerance)
+    const result = await createXenditVa({
+      externalId: transactionId,
+      bankCode,
+      name: order.service.name,
+      // Decimal.toNumber() safe for PHP amounts — no precision loss below Number.MAX_SAFE_INTEGER
+      expectedAmount: order.quotedPrice.toNumber(),
+      expirationDate: new Date(Date.now() + 72 * 60 * 60 * 1000),
+    })
+
+    await prisma.transaction.create({
+      data: {
+        id: transactionId,
+        orderId,
+        // vaId (Xendit FVA ID) in externalId — webhook lookup uses this ID (two-ID scheme)
+        externalId: result.vaId,
+        provider: 'xendit-va',
+        amount: order.quotedPrice,
+        currency: 'PHP',
+        status: TransactionStatus.PENDING,
+        vaNumber: result.accountNumber,
+        paymentMethod: result.bankCode,
+      },
+    })
+
+    redirectPath = `/dashboard/orders/${orderId}`
+  } catch (err) {
+    if (err instanceof XenditVaError) {
+      return { message: 'Payment service error. Please try again.' }
+    }
+    return { message: 'Unable to reach payment service. Please try again later.' }
+  }
+
+  // redirect() after try/catch — Next.js throws NEXT_REDIRECT internally
+  redirect(redirectPath)
 }

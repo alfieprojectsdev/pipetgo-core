@@ -1,5 +1,7 @@
 /**
- * Payment capture and failure processors for Xendit invoice webhooks.
+ * Payment capture and failure processors — provider-agnostic. Accepts NormalizedWebhookPayload
+ * from any webhook route (invoice, FVA). Route handlers normalize provider-specific payloads
+ * before dispatching here.
  *
  * processPaymentCapture and processPaymentFailed run all DB writes inside a single Prisma $transaction.
  * Any throw at any step rolls back all writes; Xendit retries on 500 reattempt the full capture.
@@ -27,8 +29,8 @@ import type { NormalizedWebhookPayload } from '@/lib/payments/types'
  */
 export async function processPaymentCapture(payload: NormalizedWebhookPayload): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    // xendit: prefix format is deployed; changing it requires migrating idempotency_keys rows. (ref: DL-005)
-    const idempotencyKey = `xendit:invoice:PAID:${payload.externalId}`
+    // ?? fallback: deploy-safety for rolling deploys where old route sends no prefix. (ref: DL-004)
+    const idempotencyKey = `${payload.idempotencyKeyPrefix ?? 'xendit:invoice'}:PAID:${payload.externalId}`
     const existing = await tx.idempotencyKey.findUnique({ where: { key: idempotencyKey } })
     if (existing) {
       console.info(`[processPaymentCapture] dedup key hit key=${idempotencyKey}`)
@@ -101,8 +103,8 @@ export async function processPaymentFailed(payload: NormalizedWebhookPayload): P
   console.info(`[processPaymentFailed] enter id=${payload.externalId}`)
 
   await prisma.$transaction(async (tx) => {
-    // xendit: prefix format is deployed; changing it requires migrating idempotency_keys rows. (ref: DL-005)
-    const idempotencyKey = `xendit:invoice:EXPIRED:${payload.externalId}`
+    // ?? fallback: deploy-safety for rolling deploys where old route sends no prefix. (ref: DL-004)
+    const idempotencyKey = `${payload.idempotencyKeyPrefix ?? 'xendit:invoice'}:EXPIRED:${payload.externalId}`
     const existing = await tx.idempotencyKey.findUnique({ where: { key: idempotencyKey } })
     if (existing) {
       console.info(`[processPaymentFailed] dedup key hit key=${idempotencyKey}`)
@@ -138,7 +140,7 @@ export async function processPaymentFailed(payload: NormalizedWebhookPayload): P
       where: { id: transaction.id, status: transaction.status },
       data: {
         status: TransactionStatus.FAILED,
-        failureReason: 'Xendit invoice EXPIRED',
+        failureReason: payload.failureReason ?? 'Xendit invoice EXPIRED',
       },
     })
     if (failResult.count === 0) return
