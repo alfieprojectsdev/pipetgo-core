@@ -84,7 +84,22 @@ Webhook arrives with `callback_virtual_account_id` = the Xendit FVA id = `Transa
 
 ---
 
-## Next
+## Post-merge (same session)
 
-- Await CodeRabbit review of PR #14; address any blocking comments
-- After PR #14 merges: run the **Compounding Protocol** covering PRs #12–#14 (T-16, T-14, T-17)
+**PR #14 merged** — squash commit `657e601e` on 2026-05-26.
+
+**CodeRabbit fixes addressed (7 items, pre-merge):**
+- `order-detail/page.tsx` — filter transaction include to `status: PENDING` (stale FAILED VA bug)
+- `order-detail/ui.tsx` — throw on unknown bank code instead of `?? bankCode` fallback
+- `checkout/action.ts` — rethrow non-`XenditVaError` so Prisma failures surface correctly
+- `xendit-va/route.ts` — throw on empty `payload.status` before dispatch
+- `xendit-va/__tests__/handlers.test.ts` — assert `failureReason` in EXPIRED-path test
+- `checkout/README.md` — correct module path (`xendit.ts` → `xendit-va.ts`); add code fence language
+- `xendit-va/README.md` — EXPIRED described as "transitions payment to FAILED" (was "no-op")
+
+**Skipped (deferred):** Race-prone idempotency guard on `initiateVaCheckout` (CodeRabbit Critical, Heavy lift) — requires partial unique index migration; race window negligible in B2B context.
+
+**Compounding Protocol run (PRs #12–#14):**
+- Pattern: fetch calls to external payment providers had no timeout
+- Rule added to CLAUDE.md: "Every `fetch()` to an external payment provider must include `signal: AbortSignal.timeout(10_000)`"
+- Applied to `xendit-va.ts` and `xendit.ts`

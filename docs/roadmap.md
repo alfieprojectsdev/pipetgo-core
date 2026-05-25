@@ -67,6 +67,156 @@ withholding deduction slice in T-09/T-10, and (4) BIR withholding agent registra
 The schema fields (`pendingBalance`, `grossAmount`, `platformFee`, `netAmount`)
 survive the migration — only their business semantics change.
 
+## Infrastructure & DevOps Provisioning
+
+Checklist of everything that must be provisioned outside the codebase for the platform to function end-to-end. Mark items `[x]` as completed.
+
+---
+
+### Hosting & Deployment
+
+- [ ] Vercel project created and linked to GitHub repo (`alfieprojectsdev/pipetgo-core`)
+- [ ] Production branch set to `main` — auto-deploys on push
+- [ ] Preview deployments enabled for feature branches
+- [ ] Build command: `npx prisma generate && next build`
+- [ ] Root directory: `.` (monorepo — no subdirectory needed)
+
+### Domain & TLS
+
+- [ ] Domain registered (e.g. `pipetgo.com`)
+- [ ] DNS records pointed to Vercel (CNAME or A)
+- [ ] Vercel custom domain configured + HTTPS verified
+- [ ] `www` → apex redirect configured
+
+### Database — Neon PostgreSQL
+
+- [ ] Neon project created (region: Southeast Asia / Singapore)
+- [ ] Production branch (`main`) — connection string is `DATABASE_URL`
+- [ ] Dev/test branch for local development — connection string is `DATABASE_TEST_URL`
+- [ ] `DATABASE_URL` set in Vercel production environment
+- [ ] `DATABASE_TEST_URL` set in local `.env.test` (not committed)
+- [ ] Prisma migrations applied to production DB (`npx prisma migrate deploy`)
+- [ ] Connection pooling confirmed (Neon serverless driver or PgBouncer)
+
+### Authentication — Google OAuth
+
+- [ ] Google Cloud Console project created
+- [ ] OAuth 2.0 credentials created (Web Application type)
+- [ ] Authorized JavaScript origins: `https://<domain>` + `http://localhost:3000`
+- [ ] Authorized redirect URIs: `https://<domain>/api/auth/callback/google` + `http://localhost:3000/api/auth/callback/google`
+- [ ] `GOOGLE_CLIENT_ID` set in Vercel env
+- [ ] `GOOGLE_CLIENT_SECRET` set in Vercel env
+- [ ] `NEXTAUTH_SECRET` generated (`openssl rand -base64 32`) and set in Vercel env
+- [ ] `NEXTAUTH_URL` set to `https://<domain>` in Vercel env
+
+### Payments — Xendit (primary processor)
+
+**Account setup**
+- [ ] Xendit business account created (`https://dashboard.xendit.co`)
+- [ ] KYB (Know Your Business) verification submitted
+- [ ] KYB approved — live mode unlocked
+- [ ] `XENDIT_SECRET_KEY` (live) set in Vercel env
+- [ ] Sandbox secret key set in local `.env` for development
+
+**Managed Sub-Accounts (AD-001 Direct Payment model)**
+- [ ] Managed Sub-Accounts feature enabled on account (contact Xendit support if not visible)
+- [ ] Commission split percentage confirmed and configured per sub-account (matches `COMMISSION_RATE` constant in `src/domain/payments/commission.ts`)
+- [ ] Process defined for creating a sub-account per onboarded lab (manual Xendit API call or admin slice — not yet ticketed)
+
+**Fixed Virtual Accounts — PESONet (T-17)**
+- [ ] Fixed Virtual Account feature enabled on Xendit account
+- [ ] Supported bank codes confirmed against `PESONET_BANK_CODES` in `src/domain/payments/pesonet.ts` (`BPI`, `BDO`, `RCBC`, `LANDBANK`, `UNIONBANK`)
+
+**Webhooks**
+- [ ] `XENDIT_WEBHOOK_TOKEN` generated and set in Vercel env
+- [ ] `XENDIT_SETTLEMENT_WEBHOOK_TOKEN` generated (separate token) and set in Vercel env
+- [ ] Invoice webhook registered in Xendit dashboard → `https://<domain>/api/webhooks/xendit` (events: `invoice.paid`, `invoice.expired`)
+- [ ] FVA webhook registered → `https://<domain>/api/webhooks/xendit-va` (events: `fixed_virtual_account.payment.succeeded`, `fixed_virtual_account.payment.expired`)
+- [ ] Settlement webhook registered → `https://<domain>/api/webhooks/xendit-settlement` (events: `managed_account.payment.settled`)
+- [ ] Webhook delivery confirmed end-to-end in sandbox before going live
+
+### Payments — PayMongo (deferred, AD-002)
+
+These are blocked on confirming sub-merchant support (see AD-002 blocking question above).
+
+- [ ] **Blocker resolved:** Confirm PayMongo supports sub-merchant or split-payment equivalent for the Direct Payment model
+- [ ] PayMongo account created (`https://dashboard.paymongo.com`)
+- [ ] Business verification completed
+- [ ] `PAYMONGO_SECRET_KEY` set in Vercel env
+- [ ] `PAYMONGO_WEBHOOK_SECRET` (HMAC-SHA256 key) set in Vercel env — this is the secret used by `verifyPayMongoHmac` stub in `src/lib/payments/webhook-auth.ts`
+- [ ] PayMongo webhook registered → `https://<domain>/api/webhooks/paymongo`
+
+### File Storage (required for T-12 attachments, T-15 KYC uploads)
+
+Provider decision is a blocker for T-12 planning (noted in ticket). Evaluate in order of preference:
+
+- [ ] **Storage provider selected** — recommended: Cloudflare R2 (zero egress cost, S3-compatible API, Philippine edge presence)
+- [ ] Bucket created with private ACL
+- [ ] CORS policy configured to allow uploads from `https://<domain>`
+- [ ] Access credentials obtained and set in Vercel env (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` — or S3 equivalents)
+- [ ] Signed URL pattern tested: presigned upload URL → client uploads directly → presigned download URL for access
+- [ ] File size limit decided and enforced at the action boundary (recommendation: 20 MB for KYC docs, 50 MB for lab result PDFs)
+
+### CI / Automated Checks
+
+- [ ] GitHub Actions workflow: runs `npx tsc --noEmit` + `npx eslint src/` on every PR
+- [ ] `DATABASE_TEST_URL` added to GitHub repo secrets (for Vitest integration tests against Neon dev branch in CI)
+- [ ] Vitest integration test step added to CI workflow (`npm test -- --run`)
+- [ ] CI status check required before merge (branch protection rule on `main`)
+
+### Monitoring & Observability
+
+- [ ] Error tracking configured — recommended: Sentry (Next.js SDK) or Vercel built-in error tracking
+- [ ] Uptime monitoring configured — recommended: Better Uptime or UptimeRobot (ping `/api/health` or homepage)
+- [ ] Vercel Analytics enabled (free tier, no configuration required)
+- [ ] Log drain configured if structured logging is needed (Vercel → Axiom or Logtail)
+
+### Transactional Email *(not yet ticketed)*
+
+No email sending exists in the codebase yet. Required before commercial launch for:
+order confirmation, quote notification, payment received, and lab payout notifications.
+
+- [ ] Email provider selected — recommended: Resend (generous free tier, Next.js SDK)
+- [ ] Sender domain verified (SPF + DKIM records on domain DNS)
+- [ ] API key obtained and set in Vercel env (`RESEND_API_KEY`)
+- [ ] Email templates drafted (order confirmation, quote request, payment confirmation)
+- [ ] Email sending slice added to relevant Server Actions (not yet a ticket — create when ready)
+
+### Legal & Regulatory (Philippines)
+
+These are prerequisites for commercial revenue, not code tickets. None can be deferred past first paying customer.
+
+- [ ] **DTI registration** (sole proprietor) or **SEC registration** (OPC / partnership) — required before operating as a business
+- [ ] **BIR Form 2303** (Certificate of Registration) — required before issuing official receipts and before first commercial revenue (explicitly called out in AD-001)
+- [ ] **BIR OR (Official Receipts)** — printed or ePOS OR for PipetGo commission invoices issued to labs; manual process acceptable at early stage
+- [ ] **VAT threshold tracking** — PipetGo must register for VAT if gross annual revenues exceed PHP 3,000,000; track from first transaction
+- [ ] **NPC registration** as Personal Information Controller — required under RA 10173 (Data Privacy Act); should be filed before T-20 goes live
+- [ ] **Privacy notice legal review** — required for T-20 consent checkbox; involves confirming data controller identity, retention periods, and NPC contact
+- [ ] **ISO 17025 accreditation check process** — admin runbook for verifying lab certificates before `Lab.isVerified = true` (T-18 prerequisite)
+
+### Environment Variables — Full Production Reference
+
+All variables required in Vercel production environment:
+
+| Variable | Source | Required by |
+|---|---|---|
+| `DATABASE_URL` | Neon dashboard → production branch | All DB queries |
+| `NEXTAUTH_SECRET` | `openssl rand -base64 32` | NextAuth session signing |
+| `NEXTAUTH_URL` | `https://<domain>` | NextAuth callback URLs |
+| `GOOGLE_CLIENT_ID` | Google Cloud Console | T-01 OAuth |
+| `GOOGLE_CLIENT_SECRET` | Google Cloud Console | T-01 OAuth |
+| `XENDIT_SECRET_KEY` | Xendit dashboard → API keys | checkout/action.ts, xendit-va.ts |
+| `XENDIT_WEBHOOK_TOKEN` | Xendit dashboard → Webhooks | invoice + FVA webhook auth |
+| `XENDIT_SETTLEMENT_WEBHOOK_TOKEN` | Xendit dashboard → Webhooks | settlement webhook auth |
+| `PAYMONGO_SECRET_KEY` | PayMongo dashboard | deferred (AD-002) |
+| `PAYMONGO_WEBHOOK_SECRET` | PayMongo dashboard | deferred (AD-002) |
+| *(storage vars TBD)* | Storage provider | T-12, T-15 |
+| `RESEND_API_KEY` | Resend dashboard | not yet ticketed |
+
+Local dev also needs `DATABASE_TEST_URL` in `.env.test` (gitignored).
+
+---
+
 ## Dependency tree
 
 ```
@@ -94,7 +244,7 @@ T-14 Payment provider normalization        [done — PR #13] [planner]
 ── Phase 2 infrastructure ──────────────────────────────────────────────────
 T-15 Lab KYC document upload              [blocked: T-02] [planner]
 T-16 Idempotency key table                [done — PR #12] [planner]
-T-17 PESONet virtual account integration  [PR #14 open] [planner]
+T-17 PESONet virtual account integration  [done — PR #14] [planner]
 
 ── Phase 3 regulatory ──────────────────────────────────────────────────────
 T-18 Lab accreditation verification       [blocked: T-02, T-13] [planner]
