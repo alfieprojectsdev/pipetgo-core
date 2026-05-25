@@ -11,7 +11,7 @@ const mockTxTransactionFindUnique = vi.fn().mockResolvedValue({
   amount: new Decimal('750.00'),
   status: TransactionStatus.PENDING,
 })
-const mockTxTransactionUpdate = vi.fn().mockRejectedValue(new Error('transaction update failure'))
+const mockTxTransactionUpdateMany = vi.fn().mockRejectedValue(new Error('transaction update failure'))
 const mockTxOrderFindUnique = vi.fn().mockResolvedValue({
   id: 'mock-order-id',
   status: OrderStatus.PAYMENT_PENDING,
@@ -25,7 +25,7 @@ const mockTx = {
   },
   transaction: {
     findUnique: mockTxTransactionFindUnique,
-    update: mockTxTransactionUpdate,
+    updateMany: mockTxTransactionUpdateMany,
   },
   order: {
     findUnique: mockTxOrderFindUnique,
@@ -48,30 +48,24 @@ vi.mock('@/domain/orders/state-machine', () => ({
 }))
 
 import { processPaymentCapture, processPaymentFailed } from '../handlers'
-import type { XenditInvoicePayload } from '../types'
+import type { NormalizedWebhookPayload } from '@/lib/payments/types'
 
 describe('processPaymentCapture — rollback error propagation', () => {
-  // Forces tx.transaction.update rejection to verify $transaction error propagation; no LabWallet mock needed under AD-001. (ref: DL-009)
+  // Forces tx.transaction.updateMany rejection to verify $transaction error propagation; no LabWallet mock needed under AD-001. (ref: DL-009)
   it('rejects with the transaction update error, confirming error propagation that triggers Prisma rollback', async () => {
-    const payload: XenditInvoicePayload = {
-      id: 'xendit-mock-ext',
-      status: 'PAID',
-      paid_amount: 750,
-      payer_email: 'lab@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: 'xendit-mock-ext',
     }
 
     await expect(processPaymentCapture(payload)).rejects.toThrow('transaction update failure')
   })
 
   it('rejects when idempotencyKey.create throws, confirming key creation participates in transaction atomicity (AC-006)', async () => {
-    mockTxTransactionUpdate.mockResolvedValueOnce({})
+    mockTxTransactionUpdateMany.mockResolvedValueOnce({ count: 1 })
     mockIdempotencyKeyCreate.mockRejectedValueOnce(new Error('idempotency-create-failure'))
 
-    const payload: XenditInvoicePayload = {
-      id: 'xendit-mock-ext',
-      status: 'PAID',
-      paid_amount: 750,
-      payer_email: 'lab@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: 'xendit-mock-ext',
     }
 
     await expect(processPaymentCapture(payload)).rejects.toThrow('idempotency-create-failure')
@@ -80,28 +74,22 @@ describe('processPaymentCapture — rollback error propagation', () => {
 
 describe('processPaymentFailed — rollback error propagation', () => {
   it('rejects when order.update throws, confirming error propagation triggers Prisma rollback', async () => {
-    mockTxTransactionUpdate.mockResolvedValueOnce({})
+    mockTxTransactionUpdateMany.mockResolvedValueOnce({ count: 1 })
 
-    const payload: XenditInvoicePayload = {
-      id: 'xendit-mock-ext',
-      status: 'EXPIRED',
-      paid_amount: 0,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: 'xendit-mock-ext',
     }
 
     await expect(processPaymentFailed(payload)).rejects.toThrow('order update failure')
   })
 
   it('rejects when idempotencyKey.create throws, confirming key creation participates in transaction atomicity (AC-006)', async () => {
-    mockTxTransactionUpdate.mockResolvedValueOnce({})
+    mockTxTransactionUpdateMany.mockResolvedValueOnce({ count: 1 })
     mockTxOrderUpdate.mockResolvedValueOnce({})
     mockIdempotencyKeyCreate.mockRejectedValueOnce(new Error('idempotency-create-failure'))
 
-    const payload: XenditInvoicePayload = {
-      id: 'xendit-mock-ext',
-      status: 'EXPIRED',
-      paid_amount: 0,
-      payer_email: 'client@test.local',
+    const payload: NormalizedWebhookPayload = {
+      externalId: 'xendit-mock-ext',
     }
 
     await expect(processPaymentFailed(payload)).rejects.toThrow('idempotency-create-failure')

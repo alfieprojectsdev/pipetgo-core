@@ -8,13 +8,18 @@ and Order records atomically.
 
 1. Xendit POSTs `{ id, status, paid_amount, payer_email, payment_method }` to
    `/api/webhooks/xendit`.
-2. `route.ts` verifies `x-callback-token` header against `XENDIT_WEBHOOK_TOKEN`
-   env var using `crypto.timingSafeEqual`. Returns 401 on mismatch.
+2. `route.ts` calls `verifyXenditToken` from `@/lib/payments/webhook-auth`, which
+   performs a constant-time comparison (buffer-length precondition enforced) of the
+   `x-callback-token` header against `XENDIT_WEBHOOK_TOKEN`. Returns 401 on mismatch.
 3. `route.ts` normalises `payload.status` to uppercase and dispatches:
    - `PAID` → `processPaymentCapture`
    - `EXPIRED` → `processPaymentFailed`
    - Other non-empty statuses → acknowledged without processing (200, no DB write)
    - Empty/missing status → throws (500) so Xendit retries
+
+   Before dispatch, `route.ts` calls `normalizeXenditInvoicePayload` (defined in
+   `webhooks/types.ts`) to construct a provider-agnostic `NormalizedWebhookPayload`
+   before invoking `processPaymentCapture` or `processPaymentFailed`.
 4. `handlers.ts:processPaymentCapture` runs a Prisma `$transaction` (PAID path):
    - Checks `IdempotencyKey` for `xendit:invoice:PAID:{payload.id}` — returns early if found (duplicate delivery).
    - Finds `Transaction` by `Transaction.externalId == payload.id`.
@@ -87,6 +92,8 @@ These status guards encode state-machine invariants independent of dedup; both l
 - Webhook capture writes only `Transaction.status` and (via fan-out) `Order.status`;
   commission settlement is tracked via Payout records created at order completion,
   not at payment capture. (ref: DL-016)
+- `webhooks/handlers.ts` imports zero provider-specific types; only `route.ts`
+  references `XenditInvoicePayload`.
 
 ## Design decisions
 
@@ -95,6 +102,15 @@ via Xendit Managed Sub-Account. The webhook handler's job is solely to advance
 Transaction and Order state. Commission tracking moves to `Payout` records created
 inside `completeOrder` — see `src/features/orders/lab-fulfillment/` and
 `docs/roadmap.md` AD-001 section.
+
+**Provider normalization boundary**: Normalization happens at the route boundary —
+`route.ts` parses `XenditInvoicePayload` and calls `normalizeXenditInvoicePayload`
+(in `webhooks/types.ts`) to produce `NormalizedWebhookPayload` before invoking
+handlers. This means a future provider migration (e.g., PayMongo) only requires
+adding `src/lib/payments/paymongo.ts` plus `src/features/payments/webhooks/paymongo/route.ts`
+— zero edits to `handlers.ts` or `src/domain`. Forward-compat stubs
+`verifyPayMongoHmac` and `verifyHitPayHmac` are already present in
+`src/lib/payments/webhook-auth.ts`.
 
 ## Required env vars
 
