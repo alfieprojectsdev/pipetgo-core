@@ -75,6 +75,7 @@ export async function createXenditInvoice(
 
   const response = await fetch('https://api.xendit.co/v2/invoices', {
     method: 'POST',
+    signal: AbortSignal.timeout(10_000),
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Basic ${credentials}`,

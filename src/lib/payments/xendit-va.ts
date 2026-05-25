@@ -71,6 +71,7 @@ export async function createXenditVa(
 
   const response = await fetch('https://api.xendit.co/fixed-virtual-accounts', {
     method: 'POST',
+    signal: AbortSignal.timeout(10_000),
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Basic ${credentials}`,
