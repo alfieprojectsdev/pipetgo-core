@@ -190,8 +190,8 @@ These are prerequisites for commercial revenue, not code tickets. None can be de
 - [ ] **BIR Form 2303** (Certificate of Registration) — required before issuing official receipts and before first commercial revenue (explicitly called out in AD-001)
 - [ ] **BIR OR (Official Receipts)** — printed or ePOS OR for PipetGo commission invoices issued to labs; manual process acceptable at early stage
 - [ ] **VAT threshold tracking** — PipetGo must register for VAT if gross annual revenues exceed PHP 3,000,000; track from first transaction
-- [ ] **NPC registration** as Personal Information Controller — required under RA 10173 (Data Privacy Act); should be filed before T-20 goes live
-- [ ] **Privacy notice legal review** — required for T-20 consent checkbox; involves confirming data controller identity, retention periods, and NPC contact
+- [ ] **NPC registration** as Personal Information Controller — required under RA 10173 (Data Privacy Act); **T-20 is now merged — this is an active prerequisite before first commercial transaction**
+- [ ] **Privacy notice legal review** — stub copy is live at `/privacy` (T-20 merged); legal must review controller identity, retention periods, and NPC contact wording **before first paying customer**
 - [ ] **ISO 17025 accreditation check process** — admin runbook for verifying lab certificates before `Lab.isVerified = true` (T-18 prerequisite)
 
 ### Environment Variables — Full Production Reference
@@ -251,7 +251,7 @@ T-18 Lab accreditation verification       [blocked: T-02, T-13] [planner]
     (ISO 17025 / ITA solidary liability)
 T-19 Dispute and redress mechanism        [blocked: T-06, schema migration] [planner]
     (ITA 2023 internal redress requirement)
-T-20 RA 10173 privacy compliance          [ready] [planner]
+T-20 RA 10173 privacy compliance          [done — PR #15] [planner]
 ```
 
 ---
@@ -268,9 +268,9 @@ Projected from **2026-05-08** (T-01/T-02 merged, T-03 in PR).
 - **Complex `[planner]` ticket** (T-12, T-14, T-17, T-18, T-19): 3 sessions — heavier research or cross-cutting scope.
 - Assumes ~3–4 working days/week on this project.
 
-### Phase 1 — Core user flows (target: week of 2026-05-11)
+### Phase 1 — Core user flows ✅ COMPLETE (2026-05-11)
 
-Unblocked immediately or by T-03 merge. All directly implementable (no `[planner]`).
+All 5/5 tickets done.
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
@@ -282,7 +282,7 @@ Unblocked immediately or by T-03 merge. All directly implementable (no `[planner
 
 **End state:** Lab-side and client-side read flows exist. T-07's blockers (T-03, T-06, T-04.5) all cleared.
 
-### Phase 2 — Transactional flows (target: 2026-05-18 → 2026-05-25)
+### Phase 2 — Transactional flows — 4/5 done (T-15 blocked)
 
 All `[planner]` tagged; each requires a plan session, `/clear`, then implementation session.
 
@@ -292,48 +292,49 @@ All `[planner]` tagged; each requires a plan session, `/clear`, then implementat
 | T-07 Quote flow | T-06 ✅ + T-03 ✅ | 2 | ✅ done (PR #7) |
 | T-08 Payment failure retry | T-06 ✅ | 2 | ✅ done (PR #8) |
 | T-09 Commission record | T-09 ✅ | 2 | ✅ done (PR #9) |
-| T-15 Lab KYC upload | T-02 ✅ | 2 | Gateway KYC API integration |
+| T-15 Lab KYC upload | T-02 ✅ | 2 | ⚠️ blocked: storage provider must be selected before planning (see DevOps checklist → File Storage) |
 
-**End state:** Full order lifecycle functional (create → quote → pay → complete). Commission records written on completion.
+**End state:** Full order lifecycle functional (create → quote → pay → complete). Commission records written on completion. T-15 unblocks when storage provider is decided and provisioned.
 
-### Phase 3 — Financial + infrastructure (target: 2026-05-25 → 2026-06-08)
+### Phase 3 — Financial + infrastructure ✅ COMPLETE (2026-05-26)
 
-Depends on Phase 2 completing. T-14 is the prerequisite for T-17.
+All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
 | T-10 Commission settlement webhook | T-09 ✅ | 2 | ✅ done (PR #10) |
 | T-11 Lab wallet dashboard | T-10 ✅ | 1 | ✅ done (PR #11) |
 | T-14 Payment provider normalization | ready now ✅ | 3 | ✅ done (PR #13) — NormalizedWebhookPayload boundary; verifyXenditToken; route.ts sole Xendit-aware file |
+| T-17 PESONet virtual account | T-14 ✅ | 3 | ✅ done (PR #14) — FVA payment for orders above PHP 50k; Xendit fixed virtual account; PESONet bank codes dispatch map |
 
-**End state:** Financial flows closed. Xendit→PayMongo migration path ready (T-14 done).
+**End state:** Financial flows closed. Xendit→PayMongo migration path ready (T-14). PESONet B2B payment path ready (T-17). MVP infrastructure complete.
 
 ### Phase 4 — Post-MVP / compliance (target: 2026-06-08 → 2026-07-06)
 
-Lower urgency. T-13 (admin panel) gates T-18.
+1/5 remaining done; T-20 in review. T-13 gates T-18.
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
+| T-17 PESONet virtual account | T-14 ✅ | 3 | ✅ done (PR #14) — pulled forward, completed in Phase 3 |
+| T-20 RA 10173 privacy compliance | T-05 ✅ | 2 | ✅ done (PR #15) — consent capture, privacy notice, enum-drift fence |
 | T-13 Admin panel | T-01 ✅ | 3 | Large scope; post-MVP |
 | T-12 Attachment uploads | T-06 + storage decision | 3 | Storage provider must be selected first |
-| T-17 PESONet virtual account | T-14 | 3 | New provider; payment research gate |
 | T-18 Lab accreditation verification | T-02 ✅ + T-13 | 2 | ITA 2023 compliance |
 | T-19 Dispute and redress | T-06 + migration | 2 | ITA 2023 internal redress requirement |
-| T-20 RA 10173 privacy compliance | T-05 | 2 | DPA consent + privacy notice |
 
 **End state:** Full roadmap complete, including regulatory compliance layer.
 
 ### Summary
 
-| Phase | Target window | MVP gate |
-|-------|---------------|----------|
-| 1 — Core flows | week of 2026-05-11 | |
-| 2 — Transactional | 2026-05-18 → 2026-05-25 | |
-| 3 — Financial | 2026-05-25 → 2026-06-08 | ✅ **MVP** |
-| 4 — Post-MVP | 2026-06-08 → 2026-07-06 | |
+| Phase | Status | Coverage | MVP gate |
+|-------|--------|----------|----------|
+| 1 — Core flows | ✅ **COMPLETE** | 5/5 | |
+| 2 — Transactional | 4/5 (T-15 blocked) | 80% | |
+| 3 — Financial | ✅ **COMPLETE** | 4/4 | ✅ **MVP gate cleared** |
+| 4 — Post-MVP | 1/5 done, T-20 in review | 20% | |
 
-**MVP (phases 1–3): ~4–5 weeks from today (target 2026-06-08).**
-The main wildcard is T-14 (payment normalization) — AD-002 expanded its scope to include auth abstraction, making it a 3-session architectural ticket. If T-14 slips, T-17 slips with it; all other tickets are on a predictable single-dependency cadence.
+**Phases 1–3 are done. The MVP infrastructure gate has been cleared ahead of schedule (2026-05-26 vs target 2026-06-08).**
+T-15 (KYC uploads) is the only Phase 2 item outstanding — blocked on a storage provider decision, not engineering scope. Phase 4 work (T-20 in review, T-13/T-18/T-19 post-MVP) can proceed independently.
 
 ---
 
@@ -655,7 +656,7 @@ The goal: migrating from Xendit to PayMongo on the inbound side requires only ad
 
 ### T-15 — Lab KYC document upload `[planner]`
 **Branch:** `feat/T15-lab-kyc-upload`
-**Status:** blocked by T-02
+**Status:** blocked — storage provider must be selected and provisioned before planning (T-02 ✅ cleared; file storage is the remaining gate — see DevOps checklist → File Storage)
 **Why planner:** Integrates with the payment gateway's KYC API (Xendit business verification or equivalent) to submit lab business documents (BIR 2303, DTI/SEC registration). Two surfaces: (1) upload UI for the LAB_ADMIN during onboarding, (2) status polling/webhook from the gateway confirming KYC approval. Gateway KYC API shape and error vocabulary must be documented in the plan before implementation.
 
 Labs must submit business registration documents to the payment gateway before they
@@ -765,7 +766,7 @@ by default; only ADMIN can set it to `true` after reviewing submitted documents.
 
 ### T-20 — RA 10173 privacy compliance `[planner]`
 **Branch:** `feat/T20-privacy-compliance`
-**Status:** ready (T-05 ✅)
+**Status:** done — PR #15
 **Why planner:** Republic Act 10173 (Data Privacy Act) requires explicit informed consent at the point of personal data collection, a stated purpose, and data subject rights. Chemical and clinical test data is sensitive personal information under NPC guidelines. Plan must identify all collection points, define the consent notice text (legal review required), and specify data retention and deletion handling.
 
 **Scope:**
@@ -824,3 +825,5 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | E1 integrity guard split | PR #12 `aa23d67` | Split compound `!order \|\| !order.lab` guards in quote-provide and lab-fulfillment pages; referential integrity violations now throw instead of calling notFound() |
 | T-16 Idempotency key table | PR #12 `aa23d67` | IdempotencyKey model; dedup key check+create in all three Xendit webhook handlers (PAID, EXPIRED, settlement); create-last invariant; three-layer dedup model |
 | T-14 Payment provider normalization | PR #13 `38546f6` | NormalizedWebhookPayload boundary; verifyXenditToken + HMAC stubs; normalizeXenditInvoicePayload adapter; route.ts sole Xendit-aware file; handlers accept only NormalizedWebhookPayload; tx.transaction.updateMany guard |
+| T-17 PESONet virtual account | PR #14 `657e601` | FVA payment method for orders above PHP 50k; Xendit fixed virtual account creation; PESONET_BANK_CODES dispatch map; pesonet/route.ts uses NormalizedWebhookPayload; AbortSignal.timeout on all fetch calls |
+| T-20 RA 10173 privacy compliance | PR #15 `0341d8e` | consentGiven + consentGivenAt on ClientProfile; z.literal(true) gate in clientDetailsSchema; hidden-input consent checkbox; /privacy static RSC; SENSITIVE_SERVICE_CATEGORIES enum-drift fence; 5-test unit suite |
