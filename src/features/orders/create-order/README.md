@@ -56,7 +56,7 @@ action.ts (Server Action)
 
 **Consent record**: `ClientProfile.consentGiven` (`Boolean @default(false)`) and `ClientProfile.consentGivenAt` (`DateTime?`) are written inside the existing `$transaction` alongside `Order` and `ClientProfile`. The timestamp is server-side (`new Date()` in the action) to prevent client-supplied spoofing.
 
-**Checkbox to FormData coercion**: Native HTML checkboxes send `'on'` when checked and are absent from `FormData` when unchecked. The consent checkbox uses a hidden input pattern (matching `HybridToggle`): `<input type="hidden" name="consentGiven" value={String(consentGiven)}>` ensures `FormData` always contains `'true'` or `'false'`. The action coerces `formData.get('consentGiven') === 'true'` to `true | undefined`; `clientDetailsSchema` uses `z.literal(true)`, so an unchecked box (`undefined`) fails `safeParse` and the submission is blocked.
+**Checkbox to FormData coercion**: Native HTML checkboxes send `'on'` when checked and are absent from `FormData` when unchecked. The consent checkbox uses a hidden input pattern (matching `HybridToggle`): `<input type="hidden" name="consentGiven" value={String(consentGiven)}>` ensures `FormData` always contains `'true'` or `'false'`. The action coerces `formData.get('consentGiven') === 'true'` to `boolean`; `clientDetailsSchema` uses `z.literal(true)`, so an unchecked box (`false`) fails `safeParse` and the submission is blocked.
 
 **Privacy page**: Static RSC at `/privacy` (no auth required). Legal review is a prerequisite before the first commercial transaction; stub copy is acceptable for the PR.
 
