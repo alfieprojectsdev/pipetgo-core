@@ -37,6 +37,10 @@ export async function createOrder(
     phone: formData.get('phone'),
     organization: formData.get('organization') || undefined,
     address: formData.get('address') || undefined,
+    // Native checkbox is absent from FormData when unchecked; hidden-input pattern (DL-003) ensures
+    // 'true' or 'false' is always present. clientDetailsSchema requires z.literal(true), so 'false'
+    // coerces to undefined and safeParse fails — blocking submission without a second guard.
+    consentGiven: formData.get("consentGiven") === "true" ? true : undefined,
   }
   const parsed = clientDetailsSchema.safeParse(rawDetails)
   if (!parsed.success) {
@@ -85,6 +89,10 @@ export async function createOrder(
         phone: parsed.data.phone,
         organization: parsed.data.organization,
         address: parsed.data.address,
+        // Consent fields written inside the $transaction to preserve Order+ClientProfile atomicity
+        // (DL-004). consentGivenAt is server-side to prevent client timestamp spoofing.
+        consentGiven: true,
+        consentGivenAt: new Date(),
       },
     })
     return created

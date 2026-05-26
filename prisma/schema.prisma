@@ -203,6 +203,10 @@ model Order {
 
 // Snapshot of client contact data at order time; one-to-one with Order, not
 // reusable across orders. Contact data shape is DB-enforced via ClientProfile. (ref: DL-002)
+// consentGiven + consentGivenAt satisfy RA 10173 demonstrability — a boolean alone fails the
+// regulator's standard; the timestamp proves WHEN consent was recorded. (ref: DL-001)
+// Migration: prisma/migrations/ is gitignored — apply locally with `npx prisma migrate dev`;
+// the PR commits only schema.prisma. (ref: DL-009)
 model ClientProfile {
   id           String   @id @default(cuid())
   orderId      String   @unique
@@ -211,6 +215,10 @@ model ClientProfile {
   phone        String
   organization String?
   address      String?
+  // RA 10173 consent (Data Privacy Act of the Philippines) — consentGiven validated as z.literal(true) at the action boundary; consentGivenAt is server-side new Date() inside the create-order $transaction
+  // Pre-T-20 rows are dev/seed fixtures only — V2 has processed zero commercial transactions; seed-data reset is a Phase-4 release prerequisite per DL-012, not a backfill ticket
+  consentGiven   Boolean   @default(false)
+  consentGivenAt DateTime?
   createdAt    DateTime @default(now())
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)

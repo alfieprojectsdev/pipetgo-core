@@ -16,6 +16,7 @@ type OrderFormShellProps = {
 export function OrderFormShell({ service, userEmail }: OrderFormShellProps) {
   const [state, formAction, isPending] = useActionState(createOrder, null)
   const [isCustomQuote, setIsCustomQuote] = useState(false)
+  const [consentGiven, setConsentGiven] = useState(false)
 
   const submitLabel = isPending
     ? 'Submitting...'
@@ -253,6 +254,34 @@ export function OrderFormShell({ service, userEmail }: OrderFormShellProps) {
                     placeholder="Street, City, Postal Code (e.g., 123 Rizal Ave, Makati, 1200)"
                   />
                 </div>
+
+              {/* RA 10173 Consent
+                  Hidden input mirrors HybridToggle pattern (DL-003): native checkboxes are absent
+                  from FormData when unchecked, so the hidden input ensures 'true' or 'false' is
+                  always present. The checkbox updates consentGiven state; the action reads the hidden
+                  input only. target=_blank on /privacy prevents losing partially-filled form (DL-008). */}
+              <div className="flex items-start gap-3 rounded-md border border-gray-200 p-3">
+                <input type="hidden" name="consentGiven" value={String(consentGiven)} />
+                <input
+                  id="consentGiven"
+                  type="checkbox"
+                  checked={consentGiven}
+                  onChange={(e) => setConsentGiven(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                />
+                <label htmlFor="consentGiven" className="text-sm text-gray-700">
+                  I consent to PipetGo collecting and processing my personal information
+                  (name, email, phone, organization, and address) to fulfil this testing
+                  request, as described in our{" "}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline text-green-700">
+                    Privacy Notice
+                  </a>
+                  . This consent is required under RA 10173 (Data Privacy Act of the Philippines).
+                </label>
+              </div>
+              {state?.errors?.consentGiven && (
+                <p className="text-sm text-red-600 mt-1">{state.errors.consentGiven[0]}</p>
+              )}
 
                 {/* Global error message */}
                 {state?.message && (
