@@ -49,3 +49,23 @@ action.ts (Server Action)
 - The action re-fetches `LabService` from the DB on every submission; no service field from `FormData` is trusted for pricing or status logic.
 - `redirect()` has no `return` before it in the success path.
 - `ClientProfile` is created (not upserted); one `ClientProfile` per `Order` enforced by `orderId @unique` in schema.
+
+## RA 10173 Privacy Compliance
+
+**Sensitive-data flag**: `ServiceCategory.CHEMICAL_TESTING` and `ServiceCategory.BIOLOGICAL_TESTING` are classified as sensitive personal information categories under NPC guidelines. No dedicated column is added to `Order`; the `service.category` field on the related `LabService` is the flag. Querying sensitive orders: `where: { service: { category: { in: ['CHEMICAL_TESTING', 'BIOLOGICAL_TESTING'] } } }`.
+
+**Consent record**: `ClientProfile.consentGiven` (`Boolean @default(false)`) and `ClientProfile.consentGivenAt` (`DateTime?`) are written inside the existing `$transaction` alongside `Order` and `ClientProfile`. The timestamp is server-side (`new Date()` in the action) to prevent client-supplied spoofing.
+
+**Checkbox to FormData coercion**: Native HTML checkboxes send `'on'` when checked and are absent from `FormData` when unchecked. The consent checkbox uses a hidden input pattern (matching `HybridToggle`): `<input type="hidden" name="consentGiven" value={String(consentGiven)}>` ensures `FormData` always contains `'true'` or `'false'`. The action coerces `formData.get('consentGiven') === 'true'` to `boolean`; `clientDetailsSchema` uses `z.literal(true)`, so an unchecked box (`false`) fails `safeParse` and the submission is blocked.
+
+**Privacy page**: Static RSC at `/privacy` (no auth required). Legal review is a prerequisite before the first commercial transaction; stub copy is acceptable for the PR.
+
+**Self-service deletion**: Deferred to post-MVP. Clients may request data deletion via email; the request process is documented on the `/privacy` page.
+
+### Invariants (additions for T-20)
+
+- `ClientProfile.consentGiven` and `ClientProfile.consentGivenAt` are written inside the existing `$transaction` — never in a separate Prisma call — to preserve Order+ClientProfile atomicity. (ref: DL-004)
+- `ServiceCategory.CHEMICAL_TESTING` and `ServiceCategory.BIOLOGICAL_TESTING` are the sensitive-personal-information flag under NPC guidelines; no Boolean column on `Order` duplicates this partition. (ref: DL-005)
+- `ClientProfile` rows with consentGiven=false, consentGivenAt=null are dev/seed fixtures outside RA 10173 scope; seed data must be reset before production use. (ref: DL-012)
+- Consent revocation/withdrawal mechanics are not implemented; consentGiven is write-once at order creation and is never mutated post-creation. (ref: DL-013)
+- `prisma/migrations/` is gitignored — migration applied locally only; the PR commits only `schema.prisma` changes. (ref: DL-009)
