@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Manual git commands — run from repo root
-# Update this file before executing; clear after session commands are done.
+# Manual git commands — update before running.
+# Idempotent: each step is safe to re-run.
+#   git add      — re-staging already-staged files is a no-op
+#   git commit   — guarded by `git diff --cached --quiet ||`; skips if nothing staged
+#   git push     — no-op if already up to date
+#   gh pr merge  — errors gracefully if already merged
+#
+# Multiline commit message: one -m flag per paragraph.
 
-git add docs/roadmap.md docs/sessions/2026-05-26-T17-implementation.md docs/sessions/2026-05-26_manual-git.sh
-git commit -m "docs: infrastructure provisioning checklist + T-17 post-merge session notes
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+git add docs/sessions/2026-05-26_T-20-playbook.md docs/sessions/2026-05-26_manual-git.sh
+git diff --cached --quiet || git commit \
+  -m "docs: T-20 playbook" \
+  -m "Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 git push
