@@ -5,6 +5,73 @@ Status: `done` | `ready` (unblocked) | `blocked` (dependency not done)
 Workflow: `[planner]` = requires explore → plan → /clear → execute sequence before implementation.
          No tag = implement directly (pattern is clear, single slice, no financial risk).
 
+---
+
+## Executive Summary
+
+*For CEO / CMO / CFO context. Engineering detail follows below.*
+
+### Where we are (as of 2026-05-29)
+
+PipetGo V2 has a working, end-to-end lab testing marketplace. A client can discover a lab, place an order, pay (card or bank transfer), and the platform splits the commission automatically. Labs can manage services, receive orders, issue quotes, and track their commission balance. The full payment infrastructure is built and tested.
+
+**What's done:**
+- Full order lifecycle: browse → quote → pay → fulfil → complete
+- Two payment methods: card/e-wallet (Xendit invoice) and bank transfer (PESONet virtual account, no ₱50k ceiling)
+- Automatic commission splitting via Xendit Managed Sub-Accounts — PipetGo receives its cut at settlement without manual reconciliation
+- Lab wallet dashboard showing earned commissions (pending vs settled)
+- RA 10173 (Data Privacy Act) consent capture — clients consent at order creation; privacy notice live at `/privacy`
+- Webhook idempotency and payment retry handling — resilient to duplicate deliveries and failed payments
+- PayMongo migration path ready (T-14 normalisation layer in place)
+
+**What's in progress (blocks first paying customer):**
+- **T-13 Admin panel** — labs are now KYC-gated at checkout (T-15 done) but cannot reach `kycStatus=APPROVED` without an admin UI. Until T-13 ships, a direct DB update is the only path to approve a lab. Priority: high.
+- **T-12 Attachment uploads** — client spec documents and lab result PDFs. Storage provider (R2) is now decided and provisioned; T-12 is unblocked.
+
+**What must happen before first revenue (non-engineering):**
+1. **BIR Form 2303** — business registration certificate; required before issuing official receipts
+2. **NPC registration** as Personal Information Controller — RA 10173 requires this since T-20 merged; active legal obligation
+3. **Privacy notice legal review** — stub is live at `/privacy`; a lawyer must review controller identity, retention periods, and data subject rights language before first paying customer
+4. **Xendit KYB** — Xendit business account verification; required before live payment processing
+5. **DTI/SEC registration** — prerequisite for BIR 2303
+
+---
+
+### Launch readiness by stakeholder
+
+| Stakeholder | Status | Blocker |
+|---|---|---|
+| **CEO** | Platform is feature-complete for MVP. KYC gate is live (T-15 merged). Admin UI to approve labs is the next blocker. | T-13 admin panel + legal prerequisites above |
+| **CMO** | Client-facing flows are complete. Labs can now upload KYC documents. Labs cannot proceed to `APPROVED` until T-13 admin UI ships (or direct DB update as interim). | T-13 + at least one lab completing KYC |
+| **CFO** | Commission accounting is built: every order generates a `Payout` record with `grossAmount`, `platformFee`, `netAmount` using `Decimal` (no float errors). BIR compliance (Form 2303, OR issuance) is a legal track, not an engineering track. VAT threshold tracking must start from transaction #1. | BIR 2303 + NPC registration (both non-engineering) |
+
+---
+
+### Revenue model implemented
+
+| Component | Status | Notes |
+|---|---|---|
+| Commission split | ✅ Live | Xendit Managed Sub-Accounts; automatic at settlement |
+| Commission rate constant | ✅ Live | `COMMISSION_RATE` in `src/domain/payments/commission.ts` |
+| Commission accounting | ✅ Live | `Payout` model; `LabWallet` tracks pending vs settled per lab |
+| Withholding tax (1% CWT) | ⏳ Deferred | Only required when PipetGo becomes payor (aggregator model). Not needed at launch under Direct Payment model (AD-001) |
+| VAT on PipetGo commission | ⚠️ Legal track | 12% if VAT-registered; tracked via accounting export from transaction data. Must track from transaction #1 |
+| Official receipt issuance | ⚠️ Legal track | BIR Form 2303 → printed OR or ePOS OR for PipetGo commission invoices to labs |
+
+---
+
+### Key risks
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| NPC registration not completed before first transaction | **High** — RA 10173 violation | Non-engineering; escalate immediately. T-20 is already live. |
+| Labs onboard before KYC gate is enforced | **High** — lab can receive payments without verification | ✅ T-15 merged — KYC gate live on both checkout paths. Labs default to PENDING; cannot reach APPROVED without T-13 admin panel. |
+| Xendit KYB not approved before launch | **High** — live payment processing blocked | Start KYB submission in parallel with T-15 engineering |
+| PayMongo sub-merchant support unconfirmed | **Medium** — affects payment processor migration | T-14 normalisation layer makes migration low-risk whenever confirmed |
+| `Lab.isVerified` (ISO 17025) gate not yet enforced | **Medium** — ITA 2023 solidary liability | T-18 post-MVP; admin runbook required before first lab goes live |
+
+---
+
 ## Architecture Decisions
 
 Resolved decisions that affect multiple tickets. Read before planning any payment slice.
@@ -146,16 +213,20 @@ These are blocked on confirming sub-merchant support (see AD-002 blocking questi
 - [ ] `PAYMONGO_WEBHOOK_SECRET` (HMAC-SHA256 key) set in Vercel env — this is the secret used by `verifyPayMongoHmac` stub in `src/lib/payments/webhook-auth.ts`
 - [ ] PayMongo webhook registered → `https://<domain>/api/webhooks/paymongo`
 
-### File Storage (required for T-12 attachments, T-15 KYC uploads)
+### File Storage — Cloudflare R2 (decided; required for T-15 KYC uploads, T-12 attachments)
 
-Provider decision is a blocker for T-12 planning (noted in ticket). Evaluate in order of preference:
+Provider decided: **Cloudflare R2** (zero egress cost, S3-compatible API, Philippine edge presence). T-15 merged (PR #16).
 
-- [ ] **Storage provider selected** — recommended: Cloudflare R2 (zero egress cost, S3-compatible API, Philippine edge presence)
-- [ ] Bucket created with private ACL
-- [ ] CORS policy configured to allow uploads from `https://<domain>`
-- [ ] Access credentials obtained and set in Vercel env (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` — or S3 equivalents)
-- [ ] Signed URL pattern tested: presigned upload URL → client uploads directly → presigned download URL for access
-- [ ] File size limit decided and enforced at the action boundary (recommendation: 20 MB for KYC docs, 50 MB for lab result PDFs)
+- [x] **R2 bucket created** — APAC region
+- [x] **API token created** — Object Read & Write scope on the bucket only
+- [ ] CORS policy configured: allow `PUT` from `https://<domain>` and `http://localhost:3000` — **required before first upload from production or localhost**
+- [x] `CLOUDFLARE_ACCOUNT_ID` set in `.env.local`
+- [x] `R2_ACCESS_KEY_ID` set in `.env.local`
+- [x] `R2_SECRET_ACCESS_KEY` set in `.env.local`
+- [x] `R2_BUCKET_NAME` set in `.env.local`
+- [x] `R2_ENDPOINT` set in `.env.local`
+- [ ] All five R2 vars set in **Vercel env** (production + preview) — not yet confirmed
+- [ ] File size limit: 20 MB for KYC docs (enforced in `upload-action.ts`); 50 MB for lab result PDFs (T-12, separate)
 
 ### CI / Automated Checks
 
@@ -210,7 +281,11 @@ All variables required in Vercel production environment:
 | `XENDIT_SETTLEMENT_WEBHOOK_TOKEN` | Xendit dashboard → Webhooks | settlement webhook auth |
 | `PAYMONGO_SECRET_KEY` | PayMongo dashboard | deferred (AD-002) |
 | `PAYMONGO_WEBHOOK_SECRET` | PayMongo dashboard | deferred (AD-002) |
-| *(storage vars TBD)* | Storage provider | T-12, T-15 |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard | T-15 R2 storage |
+| `R2_ACCESS_KEY_ID` | R2 API token | T-15 R2 storage |
+| `R2_SECRET_ACCESS_KEY` | R2 API token | T-15 R2 storage |
+| `R2_BUCKET_NAME` | R2 bucket name | T-15 R2 storage |
+| `R2_ENDPOINT` | `https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com` | T-15 R2 storage |
 | `RESEND_API_KEY` | Resend dashboard | not yet ticketed |
 
 Local dev also needs `DATABASE_TEST_URL` in `.env.test` (gitignored).
@@ -236,13 +311,13 @@ T-09 Commission record on completion       [done — PR #9] [planner]
 └── T-10 Commission settlement webhook     [done — PR #10] [planner]
     └── T-11 Lab wallet dashboard          [done — PR #11]
 
-T-12 Attachment uploads                    [blocked: T-06, storage decision] [planner]
-T-13 Admin panel                           [blocked: T-01, post-MVP] [planner]
+T-12 Attachment uploads                    [ready — T-06 ✅, R2 provisioned ✅] [planner]
+T-13 Admin panel                           [ready — T-01 ✅, T-15 ✅; priority↑ to approve labs] [planner]
 
 T-14 Payment provider normalization        [done — PR #13] [planner]
 
 ── Phase 2 infrastructure ──────────────────────────────────────────────────
-T-15 Lab KYC document upload              [blocked: T-02] [planner]
+T-15 Lab KYC document upload              [done — PR #16] [planner]
 T-16 Idempotency key table                [done — PR #12] [planner]
 T-17 PESONet virtual account integration  [done — PR #14] [planner]
 
@@ -282,7 +357,7 @@ All 5/5 tickets done.
 
 **End state:** Lab-side and client-side read flows exist. T-07's blockers (T-03, T-06, T-04.5) all cleared.
 
-### Phase 2 — Transactional flows — 4/5 done (T-15 blocked)
+### Phase 2 — Transactional flows ✅ COMPLETE (2026-05-29)
 
 All `[planner]` tagged; each requires a plan session, `/clear`, then implementation session.
 
@@ -292,9 +367,9 @@ All `[planner]` tagged; each requires a plan session, `/clear`, then implementat
 | T-07 Quote flow | T-06 ✅ + T-03 ✅ | 2 | ✅ done (PR #7) |
 | T-08 Payment failure retry | T-06 ✅ | 2 | ✅ done (PR #8) |
 | T-09 Commission record | T-09 ✅ | 2 | ✅ done (PR #9) |
-| T-15 Lab KYC upload | T-02 ✅ | 2 | ⚠️ blocked: storage provider must be selected before planning (see DevOps checklist → File Storage) |
+| T-15 Lab KYC upload | T-02 ✅ | 2 | ✅ done (PR #16) — LabDocument model, KycStatus enum, R2 presigned PUT, checkout gate on both invoice + VA paths |
 
-**End state:** Full order lifecycle functional (create → quote → pay → complete). Commission records written on completion. T-15 unblocks when storage provider is decided and provisioned.
+**End state:** Full order lifecycle functional (create → quote → pay → complete). Commission records written on completion. KYC gate live on all checkout paths (T-15). All Phase 2 tickets done.
 
 ### Phase 3 — Financial + infrastructure ✅ COMPLETE (2026-05-26)
 
@@ -311,16 +386,17 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 
 ### Phase 4 — Post-MVP / compliance (target: 2026-06-08 → 2026-07-06)
 
-1/5 remaining done; T-20 in review. T-13 gates T-18.
+3/6 done (T-17 pulled into Phase 3, T-20 merged, T-15 done). T-13 priority↑ (needed to approve labs for payment).
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
 | T-17 PESONet virtual account | T-14 ✅ | 3 | ✅ done (PR #14) — pulled forward, completed in Phase 3 |
 | T-20 RA 10173 privacy compliance | T-05 ✅ | 2 | ✅ done (PR #15) — consent capture, privacy notice, enum-drift fence |
-| T-13 Admin panel | T-01 ✅ | 3 | Large scope; post-MVP |
-| T-12 Attachment uploads | T-06 + storage decision | 3 | Storage provider must be selected first |
-| T-18 Lab accreditation verification | T-02 ✅ + T-13 | 2 | ITA 2023 compliance |
-| T-19 Dispute and redress | T-06 + migration | 2 | ITA 2023 internal redress requirement |
+| T-15 Lab KYC upload | T-02 ✅ | 2 | ✅ done (PR #16) — LabDocument model, KycStatus enum, R2 presigned PUT, checkout gate |
+| T-13 Admin panel | T-01 ✅ + T-15 ✅ | 3 | **Priority↑** — required to set kycStatus=APPROVED; gates T-18; Lab.isVerified + KycStatus admin writes |
+| T-12 Attachment uploads | T-06 ✅ + R2 ✅ | 3 | **Now unblocked** — R2 provisioned (T-15); reuses src/lib/storage/r2.ts; client spec + lab result PDFs |
+| T-18 Lab accreditation verification | T-02 ✅ + T-13 | 2 | ITA 2023 compliance; still blocked by T-13 |
+| T-19 Dispute and redress | T-06 ✅ + T-07 ✅ | 2 | ITA 2023 internal redress; schema migration needed (DISPUTED status) |
 
 **End state:** Full roadmap complete, including regulatory compliance layer.
 
@@ -329,12 +405,11 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | Phase | Status | Coverage | MVP gate |
 |-------|--------|----------|----------|
 | 1 — Core flows | ✅ **COMPLETE** | 5/5 | |
-| 2 — Transactional | 4/5 (T-15 blocked) | 80% | |
+| 2 — Transactional | ✅ **COMPLETE** | 5/5 | |
 | 3 — Financial | ✅ **COMPLETE** | 4/4 | ✅ **MVP gate cleared** |
-| 4 — Post-MVP | 1/5 done, T-20 in review | 20% | |
+| 4 — Post-MVP | 3/6 done | 50% | |
 
-**Phases 1–3 are done. The MVP infrastructure gate has been cleared ahead of schedule (2026-05-26 vs target 2026-06-08).**
-T-15 (KYC uploads) is the only Phase 2 item outstanding — blocked on a storage provider decision, not engineering scope. Phase 4 work (T-20 in review, T-13/T-18/T-19 post-MVP) can proceed independently.
+**Phases 1–3 are complete.** T-15 merged 2026-05-29, closing Phase 2. Next: T-13 (admin panel — needed to approve labs for payment, priority↑) and T-12 (attachments — now unblocked by R2 provisioning).
 
 ---
 
@@ -588,7 +663,7 @@ from `LabWallet.pendingBalance` to `availableBalance` in PipetGo's commission le
 
 ### T-12 — Attachment uploads `[planner]`
 **Branch:** `feat/T12-attachments`
-**Status:** blocked by T-06, requires storage decision (S3 / Supabase Storage / Cloudflare R2)
+**Status:** ready — T-06 ✅, storage decided (Cloudflare R2, provisioned via T-15)
 **Why planner:** Storage provider integration, signed URL pattern vs direct upload, file type/size validation at the action boundary, and two distinct upload actors (client uploads specs, lab uploads results) with different permission guards. Storage provider must be decided and documented before the plan can be written.
 
 Client uploads specification documents at order creation; lab uploads result
@@ -601,7 +676,7 @@ separate spike ticket to evaluate options.
 
 ### T-13 — Admin panel `[planner]`
 **Branch:** `feat/T13-admin`
-**Status:** post-MVP, blocked by T-01
+**Status:** ready — T-01 ✅, T-15 ✅; priority↑ (needed to set kycStatus=APPROVED for labs)
 **Why planner:** Scope is deliberately undefined at this stage — plan must define the surface area (which operations, which pages) before implementation. Touches role-gating across multiple existing slices and will likely require new middleware or layout-level auth guards.
 
 Lab verification (`isVerified`), user role management, order oversight.
@@ -656,20 +731,29 @@ The goal: migrating from Xendit to PayMongo on the inbound side requires only ad
 
 ### T-15 — Lab KYC document upload `[planner]`
 **Branch:** `feat/T15-lab-kyc-upload`
-**Status:** blocked — storage provider must be selected and provisioned before planning (T-02 ✅ cleared; file storage is the remaining gate — see DevOps checklist → File Storage)
-**Why planner:** Integrates with the payment gateway's KYC API (Xendit business verification or equivalent) to submit lab business documents (BIR 2303, DTI/SEC registration). Two surfaces: (1) upload UI for the LAB_ADMIN during onboarding, (2) status polling/webhook from the gateway confirming KYC approval. Gateway KYC API shape and error vocabulary must be documented in the plan before implementation.
+**Status:** done (PR #16, 2026-05-29)
+**Plan file:** `plans/T-15-lab-kyc-upload.md`
+**Why planner:** New `LabDocument` model (cannot reuse `Attachment.orderId` which is NOT NULL), new `KycStatus` enum (distinct from `Lab.isVerified` which is reserved for T-18 ISO 17025), presigned PUT URL pattern to bypass Next.js 4.5 MB limit, checkout gate on both invoice and PESONet paths.
 
-Labs must submit business registration documents to the payment gateway before they
-can receive payouts. `AttachmentType.ACCREDITATION_CERTIFICATE` already in schema
-for file storage; this ticket adds the gateway KYC submission layer.
+Labs must upload business registration documents (BIR 2303, DTI/SEC) to Cloudflare R2.
+`Lab.kycStatus` must be `APPROVED` (set manually by admin via T-13) before a lab can
+accept payments through checkout. Xendit KYC API submission is deferred to T-13.
 
-**Files:** `src/features/labs/kyc/` (new slice), `src/lib/payments/xendit.ts` (add KYC API calls)
+**Key decisions (from plan):**
+- Storage: Cloudflare R2 via presigned PUT URL — client uploads directly, bypassing Next.js 4.5 MB limit
+- Schema: New `LabDocument` model (not modifying `Attachment.orderId`)
+- Gate: Checkout-only (`initiateCheckout` + `initiateVaCheckout`) — not settlement handler
+- KYC API: Deferred — admin manually sets `Lab.kycStatus = APPROVED` until T-13 admin panel ships
+- `Lab.ownerId` promoted to `@unique` — migrates `findFirst→findUnique` in onboarding and service-management
+
+**Files:** `src/lib/storage/r2.ts` (new), `src/features/labs/kyc-upload/` (new slice), `prisma/schema.prisma` (KycStatus enum + LabDocument model), `src/features/payments/checkout/action.ts` (KYC gate)
 
 **Acceptance criteria:**
-- LAB_ADMIN can upload BIR 2303 and DTI/SEC docs from their dashboard
-- Documents are submitted to the payment gateway KYC endpoint
-- Gateway KYC status (`pending` / `approved` / `rejected`) is reflected on the lab dashboard
-- Labs with unapproved KYC cannot receive payouts (gate in T-10)
+- LAB_ADMIN can upload BIR 2303 and DTI/SEC docs from `/dashboard/lab/kyc`
+- Documents are stored in Cloudflare R2; `LabDocument` rows track status (PENDING → UPLOADED)
+- `Lab.kycStatus` transitions PENDING → SUBMITTED after first successful upload
+- Labs with `kycStatus !== APPROVED` cannot proceed through checkout (both invoice and VA paths)
+- `Lab.isVerified` is untouched (reserved for T-18 ISO 17025 accreditation)
 
 ---
 
@@ -827,3 +911,4 @@ too distant to specify as tickets. Revisit when T-09–T-20 are complete.
 | T-14 Payment provider normalization | PR #13 `38546f6` | NormalizedWebhookPayload boundary; verifyXenditToken + HMAC stubs; normalizeXenditInvoicePayload adapter; route.ts sole Xendit-aware file; handlers accept only NormalizedWebhookPayload; tx.transaction.updateMany guard |
 | T-17 PESONet virtual account | PR #14 `657e601` | FVA payment method for orders above PHP 50k; Xendit fixed virtual account creation; PESONET_BANK_CODES dispatch map; pesonet/route.ts uses NormalizedWebhookPayload; AbortSignal.timeout on all fetch calls |
 | T-20 RA 10173 privacy compliance | PR #15 `0341d8e` | consentGiven + consentGivenAt on ClientProfile; z.literal(true) gate in clientDetailsSchema; hidden-input consent checkbox; /privacy static RSC; SENSITIVE_SERVICE_CATEGORIES enum-drift fence; 5-test unit suite |
+| T-15 Lab KYC document upload | PR #16 `dadbbdf` | KycStatus enum + LabDocument model; Cloudflare R2 presigned PUT via src/lib/storage/r2.ts; kyc-upload VSA slice (requestUploadUrl + confirmUpload + page + ui); KYC gate on both initiateCheckout and initiateVaCheckout; Lab.ownerId @unique; 36 unit tests |
