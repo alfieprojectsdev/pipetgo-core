@@ -1,8 +1,9 @@
+import 'server-only'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { ALLOWED_MIME_TYPES, MAX_BYTES } from './constants'
 
-export const ALLOWED_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'] as const
-export const MAX_BYTES = 20 * 1024 * 1024
+export { ALLOWED_MIME_TYPES, MAX_BYTES }
 
 export class R2ConfigError extends Error {
   constructor(message: string) {
@@ -50,6 +51,7 @@ function buildS3Client(config: R2Config): S3Client {
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey,
     },
+    requestHandler: { requestTimeout: 10_000 },
   })
 }
 
@@ -62,6 +64,9 @@ function validateMime(contentType: string): void {
 }
 
 function validateSize(contentLength: number): void {
+  if (!Number.isFinite(contentLength) || contentLength <= 0) {
+    throw new R2ValidationError(`Invalid file size: ${contentLength}`)
+  }
   if (contentLength > MAX_BYTES) {
     throw new R2ValidationError(
       `File size ${contentLength} exceeds maximum ${MAX_BYTES} bytes (20 MB)`,

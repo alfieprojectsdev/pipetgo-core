@@ -6,14 +6,11 @@ three status tabs.
 ## Auth and Ownership Guard
 
 `page.tsx` uses `auth()` to verify `session.user.role === 'LAB_ADMIN'` then
-calls `prisma.lab.findMany({ where: { ownerId: session.user.id } })`. If the
-result is not exactly one lab, `notFound()` is returned. (ref: DL-006)
+calls `prisma.lab.findUnique({ where: { ownerId: session.user.id } })`. If the
+result is null, `notFound()` is returned.
 
-`Lab.ownerId` has `@@index` but NOT `@@unique` — the schema permits multiple
-labs per owner. `findFirst` would silently pick one lab and drop orders from
-others. `findMany` with a length guard prevents silent data loss while keeping
-the MVP query simple. When multi-lab support is added, the query and UI will
-be redesigned explicitly.
+`Lab.ownerId` is `@unique` — one lab per owner enforced at the schema level (T-15).
+`findUnique` enforces the constraint at the query level and makes the lookup intent explicit.
 
 ## Query Strategy
 

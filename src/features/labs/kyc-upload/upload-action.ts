@@ -3,7 +3,8 @@
 import { createId } from '@paralleldrive/cuid2'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
-import { generatePresignedPutUrl, ALLOWED_MIME_TYPES, MAX_BYTES, R2ValidationError, R2ConfigError } from '@/lib/storage/r2'
+import { generatePresignedPutUrl, R2ValidationError, R2ConfigError } from '@/lib/storage/r2'
+import { ALLOWED_MIME_TYPES, MAX_BYTES } from '@/lib/storage/constants'
 
 type ActionState = { message?: string } | null
 

@@ -16,5 +16,7 @@ KYC document upload slice for labs — presigned PUT URL to Cloudflare R2, track
 
 | Directory | What | When to read |
 | --------- | ---- | ------------ |
-| `__tests__/` | Unit tests: upload action, confirm action, KYC gate (both checkout paths) | Adding or debugging tests for this slice |
+| `__tests__/` | Unit tests for upload-action and confirm-action | Adding or debugging tests for this slice |
+
+> KYC gate tests (both checkout paths) live at `src/features/payments/checkout/__tests__/kyc-gate.test.ts`.
 

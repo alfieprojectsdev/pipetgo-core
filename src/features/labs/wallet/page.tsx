@@ -3,7 +3,7 @@
  *
  * Route: /dashboard/lab/wallet
  * Auth:  LAB_ADMIN role only; redirects to /auth/signin otherwise.
- * Guard: Returns 404 if the authenticated user has zero or more than one lab.
+ * Guard: Returns 404 if the authenticated user has no lab.
  *
  * LabWallet may be null if no orders have been completed yet — the null case
  * is presented as zero balances rather than a 404, because an empty wallet
@@ -43,15 +43,12 @@ export default async function LabWalletPage() {
     redirect('/auth/signin')
   }
 
-  // Lab.ownerId has @@index but NOT @@unique — findMany guards against silent
-  // data loss that findFirst would cause. (ref: DL-006)
-  const labs = await prisma.lab.findMany({
+  // Lab.ownerId is @unique (added T-15) — findUnique enforces the constraint at the query level.
+  const lab = await prisma.lab.findUnique({
     where: { ownerId: session.user.id },
   })
 
-  if (labs.length !== 1) notFound()
-
-  const lab = labs[0]
+  if (!lab) notFound()
 
   const [wallet, payouts] = await Promise.all([
     prisma.labWallet.findUnique({ where: { labId: lab.id } }),

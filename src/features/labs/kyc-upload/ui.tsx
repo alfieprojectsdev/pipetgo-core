@@ -1,11 +1,11 @@
 'use client'
 
-import { useActionState, useRef, useEffect } from 'react'
+import { useActionState, useRef, useEffect, useState } from 'react'
 import { type KycStatus, type DocumentStatus } from '@prisma/client'
 import { requestUploadUrl } from './upload-action'
 import { confirmUpload } from './confirm-action'
 import type { KycPageDTO } from './page'
-import { ALLOWED_MIME_TYPES, MAX_BYTES } from '@/lib/storage/r2'
+import { ALLOWED_MIME_TYPES, MAX_BYTES } from '@/lib/storage/constants'
 
 const STATUS_BADGE = {
   PENDING:   { label: 'Not started',     className: 'bg-gray-200 text-gray-700' },
@@ -38,6 +38,8 @@ export function KycUploadUi({ dto }: { dto: KycPageDTO }) {
     null as ConfirmState,
   )
 
+  const [putError, setPutError] = useState<string | null>(null)
+
   useEffect(() => {
     if (!uploadState || !('presignedUrl' in uploadState)) return
     const result = uploadState as UploadResult
@@ -52,19 +54,24 @@ export function KycUploadUi({ dto }: { dto: KycPageDTO }) {
           headers: { 'Content-Type': file.type },
           signal: AbortSignal.timeout(60_000),
         })
-        if (!putRes.ok) return
+        if (!putRes.ok) {
+          setPutError(`Upload failed (HTTP ${putRes.status}). Please try again.`)
+          return
+        }
+        setPutError(null)
 
         const confirmFormData = new FormData()
         confirmFormData.set('labDocumentId', result.labDocumentId)
         void confirmAction(confirmFormData)
-      } catch {
-        // upload timed out or failed; orphan LabDocument row is swept by future GC
+      } catch (err) {
+        setPutError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
       }
     })()
   }, [uploadState, confirmAction])
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    setPutError(null)
     const form = e.currentTarget
     const fileInput = fileRef.current
     if (!fileInput?.files?.[0]) return
@@ -140,6 +147,9 @@ export function KycUploadUi({ dto }: { dto: KycPageDTO }) {
           )}
           {confirmState && 'message' in confirmState && confirmState.message && (
             <p className="text-sm text-red-600">{confirmState.message}</p>
+          )}
+          {putError && (
+            <p className="text-sm text-red-600">{putError}</p>
           )}
           <button
             type="submit"

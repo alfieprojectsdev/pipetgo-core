@@ -38,7 +38,6 @@ vi.mock('next/cache', () => ({
 
 import { confirmUpload } from '../confirm-action'
 import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
 
 const mockAuth = auth as unknown as Mock
 
