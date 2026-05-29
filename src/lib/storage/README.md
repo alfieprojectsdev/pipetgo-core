@@ -30,5 +30,5 @@ R2 credentials never leave the server. The client receives only the short-lived 
 
 - `generatePresignedPutUrl` throws `R2ConfigError` when any of `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_ENDPOINT` are absent. Config validation is lazy (inside the function, not at import time) so tests that mock the SDK remain cheap.
 - Keys must start with `labs/`. `R2ValidationError` is thrown for any other prefix.
-- Allowed MIME types: `application/pdf`, `image/jpeg`, `image/png`. Max size: 20 MB (20 * 1024 * 1024 bytes).
+- Allowed MIME types: `application/pdf`, `image/jpeg`, `image/png`. Max size: 20 MB (`20 * 1024 * 1024` bytes).
 - `generatePresignedGetUrl` does not exist in this module. Add it only when a concrete caller requires it.

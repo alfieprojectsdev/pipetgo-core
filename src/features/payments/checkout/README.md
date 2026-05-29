@@ -23,7 +23,9 @@ page.tsx (RSC)
        -> <form action={formAction}>  (hidden orderId input)
 
 action.ts — initiateCheckout (Server Action)
-  -> TOCTOU re-fetch: re-verify clientId + status === PAYMENT_PENDING
+  -> TOCTOU re-fetch: re-verify clientId + status === PAYMENT_PENDING (include: { lab: true })
+  -> guard: order.quotedPrice set
+  -> KYC gate (T-15): order.lab.kycStatus === APPROVED — return error if not
   -> idempotency guard: PENDING Transaction by orderId -> redirect(checkoutUrl)
   -> createId() -> transactionId (used as Transaction.id AND Xendit external_id param)
   -> createXenditInvoice() [src/lib/payments/xendit.ts] — BEFORE Prisma write
@@ -35,8 +37,9 @@ action.ts — initiateCheckout (Server Action)
 
 ```text
 bank selector form
-  -> initiateVaCheckout (Server Action)
+  -> initiateVaCheckout (Server Action) (include: { lab: true })
   -> bank code + amount validation
+  -> KYC gate (T-15): order.lab.kycStatus === APPROVED — return error if not
   -> createXenditVa() [src/lib/payments/xendit-va.ts] — BEFORE Prisma write
   -> prisma.transaction.create (vaNumber = account_number from Xendit response)
   -> redirect(/dashboard/orders/{orderId})
