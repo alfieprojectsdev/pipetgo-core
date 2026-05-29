@@ -36,7 +36,7 @@ export async function registerLab(
     return { errors: parsed.error.flatten().fieldErrors }
   }
 
-  const existing = await prisma.lab.findFirst({
+  const existing = await prisma.lab.findUnique({
     where: { ownerId: session.user.id },
   })
   if (existing) {
