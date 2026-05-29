@@ -47,8 +47,8 @@ export type ServiceFormState = {
 }
 
 async function resolveOwnedLab(userId: string) {
-  const labs = await prisma.lab.findMany({ where: { ownerId: userId } })
-  return labs.length === 1 ? labs[0] : null
+  // Lab.ownerId is @unique (added T-15) — findUnique enforces the constraint at the query level.
+  return prisma.lab.findUnique({ where: { ownerId: userId } })
 }
 
 export async function createService(

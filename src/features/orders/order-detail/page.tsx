@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { OrderStatus, PricingMode, TransactionStatus } from '@prisma/client'
+import { KycStatus, OrderStatus, PricingMode, TransactionStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -44,6 +44,7 @@ export type OrderDetailDTO = {
   notes: string | null
   vaNumber: string | null
   transactionPaymentMethod: string | null
+  labKycApproved: boolean
 }
 
 type TimelineStep = {
@@ -185,7 +186,7 @@ export default async function OrderDetailPage({
     where: { id: params.orderId },
     include: {
       service: { select: { name: true, pricingMode: true } },
-      lab:     { select: { name: true } },
+      lab:     { select: { name: true, kycStatus: true } },
       clientProfile: true,
       transactions: {
         where: { status: TransactionStatus.PENDING },
@@ -217,6 +218,7 @@ export default async function OrderDetailPage({
     notes: order.notes ?? null,
     vaNumber: order.transactions[0]?.vaNumber ?? null,
     transactionPaymentMethod: order.transactions[0]?.paymentMethod ?? null,
+    labKycApproved: order.lab?.kycStatus === KycStatus.APPROVED,
   }
 
   const badge = statusBadgeConfig[dto.status as OrderStatus] ??
@@ -392,7 +394,8 @@ export default async function OrderDetailPage({
         )}
 
         {dto.status === 'PAYMENT_PENDING' && dto.vaNumber == null &&
-          dto.quotedPrice != null && Number(dto.quotedPrice) > PESONET_MIN_AMOUNT && (
+          dto.quotedPrice != null && Number(dto.quotedPrice) > PESONET_MIN_AMOUNT &&
+          dto.labKycApproved && (
           <OrderDetailVaBankSelector orderId={dto.id} />
         )}
 

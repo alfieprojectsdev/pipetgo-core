@@ -26,7 +26,7 @@
  */
 
 import { redirect } from 'next/navigation'
-import { Prisma, OrderStatus, TransactionStatus } from '@prisma/client'
+import { Prisma, OrderStatus, TransactionStatus, KycStatus } from '@prisma/client'
 import { createId } from '@paralleldrive/cuid2'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
@@ -51,7 +51,7 @@ export async function initiateCheckout(
 
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { clientProfile: true, service: true },
+    include: { clientProfile: true, service: true, lab: true },
   })
 
   if (!order || order.clientId !== session.user.id) {
@@ -65,6 +65,12 @@ export async function initiateCheckout(
   }
   if (!order.quotedPrice) {
     return { message: 'Order does not have a quoted price.' }
+  }
+  if (!order.lab) {
+    throw new Error('Order.lab missing after explicit include — referential integrity violation')
+  }
+  if (order.lab.kycStatus !== KycStatus.APPROVED) {
+    return { message: 'This lab is not yet verified. Payment cannot proceed.' }
   }
 
   // Idempotency guard: double-submit or browser back+resubmit must not create a
@@ -136,7 +142,7 @@ export async function initiateVaCheckout(
 
   const order = await prisma.order.findUnique({
     where: { id: orderId },
-    include: { service: true },
+    include: { service: true, lab: true },
   })
 
   if (!order || order.clientId !== session.user.id) {
@@ -152,6 +158,12 @@ export async function initiateVaCheckout(
   // Amount threshold: server-side guard mirrors UI gate (dual-layer)
   if (order.quotedPrice.toNumber() <= PESONET_MIN_AMOUNT) {
     return { message: 'PESONet is only available for orders above ₱50,000.' }
+  }
+  if (!order.lab) {
+    throw new Error('Order.lab missing after explicit include — referential integrity violation')
+  }
+  if (order.lab.kycStatus !== KycStatus.APPROVED) {
+    return { message: 'This lab is not yet verified. Payment cannot proceed.' }
   }
 
   // Bank code validation: allowlist enforced server-side to prevent injection

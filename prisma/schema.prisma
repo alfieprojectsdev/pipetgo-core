@@ -58,6 +58,21 @@ enum PayoutStatus {
   FAILED
 }
 
+
+enum KycStatus {
+  PENDING
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum DocumentStatus {
+  PENDING
+  UPLOADED
+  VERIFIED
+  REJECTED
+}
+
 // 6 values: CHEMICAL_TESTING, BIOLOGICAL_TESTING, PHYSICAL_TESTING,
 // ENVIRONMENTAL_TESTING, CALIBRATION, CERTIFICATION.
 // Enum prevents arbitrary strings in the category column at DB level. (ref: DL-003)
@@ -91,7 +106,8 @@ model User {
   accounts    Account[]
   labs        Lab[]
   orders      Order[]
-  attachments Attachment[]
+  attachments  Attachment[]
+  labDocuments LabDocument[]
 
   @@map("users")
 }
@@ -127,12 +143,13 @@ model VerificationToken {
 
 model Lab {
   id             String   @id @default(cuid())
-  ownerId        String
+  ownerId        String   @unique
   name           String
   description    String?
   location       Json?
   certifications String[]
   isVerified     Boolean  @default(false)
+  kycStatus      KycStatus @default(PENDING)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -142,8 +159,8 @@ model Lab {
   attachments Attachment[]
   wallet      LabWallet?
   payouts     Payout[]
+  documents   LabDocument[]
 
-  @@index([ownerId])
   @@map("labs")
 }
 
@@ -245,6 +262,25 @@ model Attachment {
   @@index([orderId])
   @@index([uploadedById])
   @@map("attachments")
+}
+model LabDocument {
+  id           String         @id @default(cuid())
+  labId        String
+  uploadedById String
+  documentType String
+  r2Key        String         @unique
+  fileName     String
+  fileSize     Int
+  mimeType     String
+  status       DocumentStatus @default(PENDING)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  lab        Lab  @relation(fields: [labId], references: [id])
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+
+  @@index([labId, status])
+  @@map("lab_documents")
 }
 
 model Transaction {

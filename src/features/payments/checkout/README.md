@@ -23,7 +23,9 @@ page.tsx (RSC)
        -> <form action={formAction}>  (hidden orderId input)
 
 action.ts — initiateCheckout (Server Action)
-  -> TOCTOU re-fetch: re-verify clientId + status === PAYMENT_PENDING
+  -> TOCTOU re-fetch: re-verify clientId + status === PAYMENT_PENDING (include: { lab: true })
+  -> guard: order.quotedPrice set
+  -> KYC gate (T-15): order.lab.kycStatus === APPROVED — return error if not
   -> idempotency guard: PENDING Transaction by orderId -> redirect(checkoutUrl)
   -> createId() -> transactionId (used as Transaction.id AND Xendit external_id param)
   -> createXenditInvoice() [src/lib/payments/xendit.ts] — BEFORE Prisma write
@@ -35,8 +37,9 @@ action.ts — initiateCheckout (Server Action)
 
 ```text
 bank selector form
-  -> initiateVaCheckout (Server Action)
+  -> initiateVaCheckout (Server Action) (include: { lab: true })
   -> bank code + amount validation
+  -> KYC gate (T-15): order.lab.kycStatus === APPROVED — return error if not
   -> createXenditVa() [src/lib/payments/xendit-va.ts] — BEFORE Prisma write
   -> prisma.transaction.create (vaNumber = account_number from Xendit response)
   -> redirect(/dashboard/orders/{orderId})
@@ -99,6 +102,20 @@ No multi-currency requirement exists; parameterizing currency would be YAGNI per
 from `@/features/*`. It is an infrastructure helper consumed by feature slices, not
 part of any slice itself. This mirrors the direction of the ADR-001 boundary rule:
 features may import from `src/lib/`, but `src/lib/` must not import from `src/features/`.
+
+## KYC Gate (T-15)
+
+Both `initiateCheckout` and `initiateVaCheckout` gate on `Lab.kycStatus === APPROVED` before any Xendit call.
+
+**DL-003 rationale — gate at checkout, not settlement**: By settlement time Xendit has already collected client funds and the platform owes the lab. Gating at settlement can only delay payout — it cannot prevent the invoice from being issued. The checkout actions are the first point where the platform commits to creating a Xendit invoice or FVA in the lab's name; rejecting before that call is the only point where no money has moved.
+
+**`lab: true` include is required — do not remove**: Both `initiateCheckout` and `initiateVaCheckout` include `lab: true` in the `Order` lookup. This include populates `order.lab.kycStatus`, which the gate reads. Removing the include as "unused" silently bypasses the gate on every checkout.
+
+**Null relation after explicit include is a data corruption event**: After an explicit `include: { lab: true }`, a null `order.lab` is a referential-integrity violation — not a missing-row scenario. The guard must `throw new Error('Order.lab missing after explicit include — referential integrity violation')`, not call `notFound()`. A `notFound()` here buries a data-layer failure in production monitoring as a normal 404.
+
+**Gate ordering (DL-011)**: The KYC gate runs after the order-validity guards (`order not found`, `wrong status`, `missing quotedPrice`) but **before** the PENDING-Transaction idempotency lookup. An unverified lab must never reach Xendit even if a pre-existing PENDING Transaction exists for the same order. The redirect-to-existing-PENDING-Transaction branch is intentionally preempted: any pre-T-15 PENDING Transaction on an unverified lab would silently route the user to a Xendit invoice the lab cannot collect on. The KYC error message is the correct outcome.
+
+**Sub-account routing (DL-012)**: The KYC gate is orthogonal to sub-account invoice routing (T-17) — this gate is not related to that migration.
 
 ## Invariants
 

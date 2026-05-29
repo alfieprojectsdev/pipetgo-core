@@ -7,7 +7,7 @@ export default async function ServiceManagementPage() {
   const session = await auth()
   if (!session?.user.id || session.user.role !== 'LAB_ADMIN') redirect('/auth/signin')
 
-  const lab = await prisma.lab.findFirst({ where: { ownerId: session.user.id } })
+  const lab = await prisma.lab.findUnique({ where: { ownerId: session.user.id } })
   if (!lab) notFound()
 
   const services = await prisma.labService.findMany({

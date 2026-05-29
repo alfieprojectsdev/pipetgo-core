@@ -3,9 +3,7 @@
  *
  * Route: /dashboard/lab
  * Auth:  LAB_ADMIN role only; redirects to /auth/signin otherwise.
- * Guard: Returns 404 if the authenticated user has zero labs or more than one
- *        lab (Lab.ownerId has no unique constraint, so multi-lab is guarded
- *        explicitly to avoid silent data loss).
+ * Guard: Returns 404 if the authenticated user has no lab.
  *
  * Date fields are converted to ISO strings before being passed to the client
  * component to prevent Next.js RSC serialization failure on Date objects.
@@ -36,16 +34,12 @@ export default async function LabDashboardPage() {
     redirect('/auth/signin')
   }
 
-  // Lab.ownerId has @@index but NOT @@unique — multiple labs per owner is
-  // schema-valid. findMany guards against silent data loss that findFirst
-  // would cause by silently picking one lab. (ref: DL-006)
-  const labs = await prisma.lab.findMany({
+  // Lab.ownerId is @unique (added T-15) — findUnique enforces the constraint at the query level.
+  const lab = await prisma.lab.findUnique({
     where: { ownerId: session.user.id },
   })
 
-  if (labs.length !== 1) notFound()
-
-  const lab = labs[0]
+  if (!lab) notFound()
 
   const orders = await prisma.order.findMany({
     where: {
