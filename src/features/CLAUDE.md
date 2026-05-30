@@ -12,3 +12,4 @@ Vertical slice features. Each subdirectory is a self-contained slice with its ow
 | `payments/`| Payment flow slices; webhook slice includes integration tests in `payments/webhooks/__tests__/` | Implementing checkout or payment status pages, or running payment capture integration tests |
 | `services/`| Lab service listing and detail slices      | Implementing service browsing or search           |
 | `clients/` | Client-facing feature slices               | Implementing client dashboard or order views      |
+| `admin/`   | Admin-only feature slices                  | Implementing any admin operation (KYC review, future role management) |

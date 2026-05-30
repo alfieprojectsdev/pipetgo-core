@@ -104,6 +104,15 @@ export function KycUploadUi({ dto }: { dto: KycPageDTO }) {
           </div>
         </div>
 
+        {/* Rejection reason banner — only rendered when kycStatus===REJECTED and a reason
+            was recorded. The reason is required by the admin action on reject. (ref: DL-006) */}
+        {dto.kycStatus === 'REJECTED' && dto.kycRejectionReason && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+            <h2 className="text-sm font-medium text-red-800 mb-1">KYC Rejected</h2>
+            <p className="text-sm text-red-700">{dto.kycRejectionReason}</p>
+          </div>
+        )}
+
         {dto.documents.length > 0 && (
           <div className="mb-6 bg-white rounded-lg shadow p-4">
             <h2 className="text-sm font-medium text-gray-700 mb-3">Uploaded Documents</h2>
