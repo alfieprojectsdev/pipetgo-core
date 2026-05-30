@@ -1,5 +1,5 @@
 import 'server-only'
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { ALLOWED_MIME_TYPES, MAX_BYTES } from './constants'
 
@@ -95,6 +95,33 @@ export async function generatePresignedPutUrl(
       Key: key,
       ContentType: contentType,
       ContentLength: contentLength,
+    }),
+    { expiresIn: 300 },
+  )
+}
+
+/**
+ * Mints a 300s presigned GET URL for an R2 object.
+ * Key must start with 'labs/' — throws R2ValidationError otherwise (defense-in-depth
+ * against arbitrary-key requests, reusing the same prefix guard as the PUT path).
+ * Call from a Server Action only; the key must be loaded from a stored LabDocument.r2Key,
+ * never from client input. (ref: DL-004)
+ */
+export async function generatePresignedGetUrl(
+  key: string,
+): Promise<string> {
+  if (!key.startsWith('labs/')) {
+    throw new R2ValidationError(`Key must start with 'labs/' prefix: ${key}`)
+  }
+
+  const config = getR2Config()
+  const client = buildS3Client(config)
+
+  return getSignedUrl(
+    client,
+    new GetObjectCommand({
+      Bucket: config.bucketName,
+      Key: key,
     }),
     { expiresIn: 300 },
   )

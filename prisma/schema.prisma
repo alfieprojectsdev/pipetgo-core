@@ -108,6 +108,8 @@ model User {
   orders      Order[]
   attachments  Attachment[]
   labDocuments LabDocument[]
+  // Named relation back-reference for kycReviewedById on Lab. (ref: DL-005)
+  kycReviewedLabs Lab[] @relation("LabKycReviewer")
 
   @@map("users")
 }
@@ -152,8 +154,13 @@ model Lab {
   kycStatus      KycStatus @default(PENDING)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  // Latest-review-only audit — re-review overwrites all three fields. (ref: DL-005)
+  kycReviewedById    String?
+  kycReviewedAt      DateTime?
+  kycRejectionReason String?
 
   owner       User         @relation(fields: [ownerId], references: [id])
+  reviewer    User?        @relation("LabKycReviewer", fields: [kycReviewedById], references: [id])
   services    LabService[]
   orders      Order[]
   attachments Attachment[]

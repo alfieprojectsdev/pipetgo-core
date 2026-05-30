@@ -15,6 +15,7 @@ export default defineConfig({
       'src/lib/storage/__tests__/**/*.test.ts',
       'src/features/labs/kyc-upload/__tests__/**/*.test.ts',
       'src/features/payments/checkout/__tests__/kyc-gate.test.ts',
+      'src/features/admin/kyc-review/__tests__/**/*.test.ts',
     ],
   },
 })

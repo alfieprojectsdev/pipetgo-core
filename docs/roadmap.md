@@ -163,6 +163,8 @@ Checklist of everything that must be provisioned outside the codebase for the pl
 - [ ] `DATABASE_URL` set in Vercel production environment
 - [ ] `DATABASE_TEST_URL` set in local `.env.test` (not committed)
 - [ ] Prisma migrations applied to production DB (`npx prisma migrate deploy`)
+- [ ] **T-13 audit columns applied per-environment** — `prisma/migrations/` is gitignored (DL-011); run `npx prisma migrate dev` locally and on each Neon branch after pulling T-13. `schema.prisma` is the committed source of truth; missing this step causes a runtime crash on the audit fields, not a type error.
+- [ ] **First ADMIN user bootstrapped** — `UPDATE "users" SET role = 'ADMIN' WHERE email = '<admin-email>';` on the target Neon branch (DL-008). No in-app promotion path exists.
 - [ ] Connection pooling confirmed (Neon serverless driver or PgBouncer)
 
 ### Authentication — Google OAuth
@@ -312,7 +314,8 @@ T-09 Commission record on completion       [done — PR #9] [planner]
     └── T-11 Lab wallet dashboard          [done — PR #11]
 
 T-12 Attachment uploads                    [ready — T-06 ✅, R2 provisioned ✅] [planner]
-T-13 Admin panel                           [ready — T-01 ✅, T-15 ✅; priority↑ to approve labs] [planner]
+T-13 Admin panel — KYC review surface      [done — PR #17] [planner]
+<!-- T-13 scope: KYC-review only. T-13b covers role-management + order oversight. -->
 
 T-14 Payment provider normalization        [done — PR #13] [planner]
 
@@ -386,14 +389,14 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 
 ### Phase 4 — Post-MVP / compliance (target: 2026-06-08 → 2026-07-06)
 
-3/6 done (T-17 pulled into Phase 3, T-20 merged, T-15 done). T-13 priority↑ (needed to approve labs for payment).
+4/6 done (T-17 pulled into Phase 3, T-20 merged, T-15 done, T-13 KYC-review done).
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
 | T-17 PESONet virtual account | T-14 ✅ | 3 | ✅ done (PR #14) — pulled forward, completed in Phase 3 |
 | T-20 RA 10173 privacy compliance | T-05 ✅ | 2 | ✅ done (PR #15) — consent capture, privacy notice, enum-drift fence |
 | T-15 Lab KYC upload | T-02 ✅ | 2 | ✅ done (PR #16) — LabDocument model, KycStatus enum, R2 presigned PUT, checkout gate |
-| T-13 Admin panel | T-01 ✅ + T-15 ✅ | 3 | **Priority↑** — required to set kycStatus=APPROVED; gates T-18; Lab.isVerified + KycStatus admin writes |
+| T-13 Admin panel — KYC review surface | T-01 ✅ + T-15 ✅ | 1 | ✅ done (PR #17) — ADMIN-gated KYC review queue + approve/reject; T-13b (role mgmt + order oversight) is follow-up |
 | T-12 Attachment uploads | T-06 ✅ + R2 ✅ | 3 | **Now unblocked** — R2 provisioned (T-15); reuses src/lib/storage/r2.ts; client spec + lab result PDFs |
 | T-18 Lab accreditation verification | T-02 ✅ + T-13 | 2 | ITA 2023 compliance; still blocked by T-13 |
 | T-19 Dispute and redress | T-06 ✅ + T-07 ✅ | 2 | ITA 2023 internal redress; schema migration needed (DISPUTED status) |
@@ -407,9 +410,9 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | 1 — Core flows | ✅ **COMPLETE** | 5/5 | |
 | 2 — Transactional | ✅ **COMPLETE** | 5/5 | |
 | 3 — Financial | ✅ **COMPLETE** | 4/4 | ✅ **MVP gate cleared** |
-| 4 — Post-MVP | 3/6 done | 50% | |
+| 4 — Post-MVP | 4/6 done | 67% | |
 
-**Phases 1–3 are complete.** T-15 merged 2026-05-29, closing Phase 2. Next: T-13 (admin panel — needed to approve labs for payment, priority↑) and T-12 (attachments — now unblocked by R2 provisioning).
+**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs). T-13b (role management + order oversight) is the follow-up. T-12 is next (attachments, now unblocked).
 
 ---
 
@@ -676,10 +679,10 @@ separate spike ticket to evaluate options.
 
 ### T-13 — Admin panel `[planner]`
 **Branch:** `feat/T13-admin`
-**Status:** ready — T-01 ✅, T-15 ✅; priority↑ (needed to set kycStatus=APPROVED for labs)
+**Status:** done (KYC-review surface, PR #17) — T-13b (role mgmt + order oversight) is the follow-up
 **Why planner:** Scope is deliberately undefined at this stage — plan must define the surface area (which operations, which pages) before implementation. Touches role-gating across multiple existing slices and will likely require new middleware or layout-level auth guards.
 
-Lab verification (`isVerified`), user role management, order oversight.
+Lab verification (`isVerified`) and order oversight deferred to T-13b. KYC review surface shipped.
 `UserRole.ADMIN` exists in schema; no admin slices exist.
 
 ---
@@ -737,7 +740,7 @@ The goal: migrating from Xendit to PayMongo on the inbound side requires only ad
 
 Labs must upload business registration documents (BIR 2303, DTI/SEC) to Cloudflare R2.
 `Lab.kycStatus` must be `APPROVED` (set manually by admin via T-13) before a lab can
-accept payments through checkout. Xendit KYC API submission is deferred to T-13.
+accept payments through checkout. Xendit KYC API submission is deferred — manual admin review (shipped in T-13) is the gate (T-15 DL-004). Xendit KYC API integration is not yet planned.
 
 **Key decisions (from plan):**
 - Storage: Cloudflare R2 via presigned PUT URL — client uploads directly, bypassing Next.js 4.5 MB limit
