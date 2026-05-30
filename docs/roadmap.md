@@ -11,7 +11,7 @@ Workflow: `[planner]` = requires explore → plan → /clear → execute sequenc
 
 *For CEO / CMO / CFO context. Engineering detail follows below.*
 
-### Where we are (as of 2026-05-29)
+### Where we are (as of 2026-05-31)
 
 PipetGo V2 has a working, end-to-end lab testing marketplace. A client can discover a lab, place an order, pay (card or bank transfer), and the platform splits the commission automatically. Labs can manage services, receive orders, issue quotes, and track their commission balance. The full payment infrastructure is built and tested.
 
@@ -23,10 +23,12 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 - RA 10173 (Data Privacy Act) consent capture — clients consent at order creation; privacy notice live at `/privacy`
 - Webhook idempotency and payment retry handling — resilient to duplicate deliveries and failed payments
 - PayMongo migration path ready (T-14 normalisation layer in place)
+- **Admin KYC review panel (T-13, PR #17)** — an ADMIN can view a lab's submitted documents and approve/reject; `kycStatus` reaches APPROVED through the UI, not just a direct DB write. This closes the lab-approval path that gates first revenue.
 
-**What's in progress (blocks first paying customer):**
-- **T-13 Admin panel** — labs are now KYC-gated at checkout (T-15 done) but cannot reach `kycStatus=APPROVED` without an admin UI. Until T-13 ships, a direct DB update is the only path to approve a lab. Priority: high.
-- **T-12 Attachment uploads** — client spec documents and lab result PDFs. Storage provider (R2) is now decided and provisioned; T-12 is unblocked.
+**What's next (engineering — no longer blocks lab approval):**
+- **T-18 Lab accreditation verification** — ISO 17025 / ITA solidary-liability gate (`Lab.isVerified`, distinct from KYC). Unblocked by T-13; recommended next.
+- **T-12 Attachment uploads** — client spec documents and lab result PDFs. R2 provisioned; unblocked.
+- **T-13b** — admin role management + order/transaction oversight, spun out of T-13 (privilege-escalation surface, own audit focus).
 
 **What must happen before first revenue (non-engineering):**
 1. **BIR Form 2303** — business registration certificate; required before issuing official receipts
@@ -41,8 +43,8 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 
 | Stakeholder | Status | Blocker |
 |---|---|---|
-| **CEO** | Platform is feature-complete for MVP. KYC gate is live (T-15 merged). Admin UI to approve labs is the next blocker. | T-13 admin panel + legal prerequisites above |
-| **CMO** | Client-facing flows are complete. Labs can now upload KYC documents. Labs cannot proceed to `APPROVED` until T-13 admin UI ships (or direct DB update as interim). | T-13 + at least one lab completing KYC |
+| **CEO** | Platform is feature-complete for MVP. KYC gate is live (T-15) and the admin approval UI shipped (T-13, PR #17). Remaining blockers are legal, not engineering. | Legal prerequisites above (BIR 2303, NPC registration, Xendit KYB) |
+| **CMO** | Client-facing flows are complete. Labs upload KYC documents and an admin can review and approve them in-app (T-13). | At least one lab completing KYC + admin review |
 | **CFO** | Commission accounting is built: every order generates a `Payout` record with `grossAmount`, `platformFee`, `netAmount` using `Decimal` (no float errors). BIR compliance (Form 2303, OR issuance) is a legal track, not an engineering track. VAT threshold tracking must start from transaction #1. | BIR 2303 + NPC registration (both non-engineering) |
 
 ---
@@ -65,7 +67,7 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 | Risk | Severity | Mitigation |
 |---|---|---|
 | NPC registration not completed before first transaction | **High** — RA 10173 violation | Non-engineering; escalate immediately. T-20 is already live. |
-| Labs onboard before KYC gate is enforced | **High** — lab can receive payments without verification | ✅ T-15 merged — KYC gate live on both checkout paths. Labs default to PENDING; cannot reach APPROVED without T-13 admin panel. |
+| Labs onboard before KYC gate is enforced | **High** — lab can receive payments without verification | ✅ T-15 + T-13 merged — KYC gate live on both checkout paths; an admin reviews and approves/rejects in-app (T-13, PR #17). Labs default to PENDING and require admin approval to reach APPROVED. |
 | Xendit KYB not approved before launch | **High** — live payment processing blocked | Start KYB submission in parallel with T-15 engineering |
 | PayMongo sub-merchant support unconfirmed | **Medium** — affects payment processor migration | T-14 normalisation layer makes migration low-risk whenever confirmed |
 | `Lab.isVerified` (ISO 17025) gate not yet enforced | **Medium** — ITA 2023 solidary liability | T-18 post-MVP; admin runbook required before first lab goes live |
