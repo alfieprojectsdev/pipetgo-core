@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useTransition } from 'react'
+import { useActionState, useTransition, useState } from 'react'
 import { type KycStatus, type DocumentStatus } from '@prisma/client'
 import { approveOrRejectKyc } from './action'
 import { viewKycDocument } from './view-document-action'
@@ -27,24 +27,33 @@ const DOC_STATUS_BADGE = {
  */
 function ViewDocumentButton({ docId, fileName }: { docId: string; fileName: string }) {
   const [isPending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
 
   function handleClick() {
+    setError(null)
     startTransition(async () => {
       const result = await viewKycDocument(docId)
       if ('url' in result) {
         window.open(result.url, '_blank', 'noopener,noreferrer')
+      } else {
+        setError(result.message ?? 'Unable to open document.')
       }
     })
   }
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={isPending}
-      className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50"
-    >
-      {isPending ? 'Loading…' : `View ${fileName}`}
-    </button>
+    <div className="flex flex-col items-end gap-1">
+      <button
+        onClick={handleClick}
+        disabled={isPending}
+        className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50"
+      >
+        {isPending ? 'Loading…' : `View ${fileName}`}
+      </button>
+      {error && (
+        <p className="text-xs text-red-600">{error}</p>
+      )}
+    </div>
   )
 }
 

@@ -34,9 +34,12 @@ export async function approveOrRejectKyc(
   _prevState: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const labId = formData.get('labId') as string | null
-  const decision = formData.get('decision') as string | null
-  const reason = (formData.get('reason') as string | null)?.trim() ?? ''
+  const labIdValue = formData.get('labId')
+  const decisionValue = formData.get('decision')
+  const reasonValue = formData.get('reason')
+  const labId = typeof labIdValue === 'string' ? labIdValue : null
+  const decision = typeof decisionValue === 'string' ? decisionValue : null
+  const reason = typeof reasonValue === 'string' ? reasonValue.trim() : ''
 
   if (!labId) return { message: 'Missing lab ID.' }
   if (decision !== 'APPROVED' && decision !== 'REJECTED') {
@@ -56,29 +59,33 @@ export async function approveOrRejectKyc(
   let result: ActionState = null
   let shouldRedirect = false
 
-  await prisma.$transaction(async (tx) => {
-    const updateResult = await tx.lab.updateMany({
-      where: { id: labId, kycStatus: 'SUBMITTED' },
-      data: {
-        kycStatus: decision,
-        kycReviewedById: reviewerId,
-        kycReviewedAt: new Date(),
-        kycRejectionReason: decision === 'REJECTED' ? reason : null,
-      },
+  try {
+    await prisma.$transaction(async (tx) => {
+      const updateResult = await tx.lab.updateMany({
+        where: { id: labId, kycStatus: 'SUBMITTED' },
+        data: {
+          kycStatus: decision,
+          kycReviewedById: reviewerId,
+          kycReviewedAt: new Date(),
+          kycRejectionReason: decision === 'REJECTED' ? reason : null,
+        },
+      })
+
+      if (updateResult.count === 0) {
+        result = { message: 'Lab is no longer in SUBMITTED status — review may have already been recorded.' }
+        return
+      }
+
+      await tx.labDocument.updateMany({
+        where: { labId, status: 'UPLOADED' },
+        data: { status: decision === 'APPROVED' ? 'VERIFIED' : 'REJECTED' },
+      })
+
+      shouldRedirect = true
     })
-
-    if (updateResult.count === 0) {
-      result = { message: 'Lab is no longer in SUBMITTED status — review may have already been recorded.' }
-      return
-    }
-
-    await tx.labDocument.updateMany({
-      where: { labId, status: 'UPLOADED' },
-      data: { status: decision === 'APPROVED' ? 'VERIFIED' : 'REJECTED' },
-    })
-
-    shouldRedirect = true
-  })
+  } catch (e) {
+    throw new Error(`KYC review transaction failed: ${e instanceof Error ? e.message : String(e)}`)
+  }
 
   if (result !== null) return result
 

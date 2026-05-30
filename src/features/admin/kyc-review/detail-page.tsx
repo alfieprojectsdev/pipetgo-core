@@ -60,7 +60,7 @@ export default async function AdminKycDetailPage({
     kycReviewedAt: lab.kycReviewedAt ? lab.kycReviewedAt.toISOString() : null,
     kycRejectionReason: lab.kycRejectionReason,
     ownerName: lab.owner.name ?? null,
-    ownerEmail: lab.owner.email ?? '',
+    ownerEmail: lab.owner.email,
     documents: lab.documents.map((doc) => ({
       id: doc.id,
       documentType: doc.documentType,

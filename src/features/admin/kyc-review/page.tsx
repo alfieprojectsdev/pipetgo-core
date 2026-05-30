@@ -42,7 +42,7 @@ export default async function AdminKycQueuePage() {
     name: lab.name,
     kycStatus: lab.kycStatus,
     createdAt: lab.createdAt.toISOString(),
-    ownerEmail: lab.owner.email ?? '',
+    ownerEmail: lab.owner.email,
   }))
 
   return <AdminKycQueueUi queue={queue} />

@@ -32,6 +32,10 @@ export default async function KycPage() {
 
   if (!lab) notFound()
 
+  if (lab.kycStatus === 'REJECTED' && !lab.kycRejectionReason) {
+    throw new Error('REJECTED lab missing kycRejectionReason — invariant violation')
+  }
+
   const dto: KycPageDTO = {
     kycStatus: lab.kycStatus,
     kycRejectionReason: lab.kycRejectionReason ?? null,

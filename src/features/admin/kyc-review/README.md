@@ -53,7 +53,7 @@ in the page payload. `viewKycDocument` mints a 300s presigned GET URL on demand:
 3. Calls `generatePresignedGetUrl(key)` — enforces `labs/` prefix guard.
 4. Returns `{ url }` for `window.open`.
 
-Embedding the URL in the RSC payload would over-expose the credential for the full page
+Embedding the URL in the RSC payload would over-expose the credential for the full-page
 lifetime and leak it into the Next.js router cache.
 
 ## Audit columns — latest-review-only (DL-005)

@@ -23,15 +23,26 @@ export async function viewKycDocument(labDocumentId: string): Promise<ViewDocume
     return { message: 'Unauthorized.' }
   }
 
-  const doc = await prisma.labDocument.findUnique({
-    where: { id: labDocumentId },
-    select: { r2Key: true },
-  })
+  let doc: { r2Key: string } | null
+  try {
+    doc = await prisma.labDocument.findUnique({
+      where: { id: labDocumentId },
+      select: { r2Key: true },
+    })
+  } catch (e) {
+    return { message: 'Unable to retrieve document.' }
+  }
 
   if (!doc) {
     return { message: 'Document not found.' }
   }
 
-  const url = await generatePresignedGetUrl(doc.r2Key)
+  let url: string
+  try {
+    url = await generatePresignedGetUrl(doc.r2Key)
+  } catch (e) {
+    return { message: 'Unable to retrieve document.' }
+  }
+
   return { url }
 }

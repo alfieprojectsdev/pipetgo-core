@@ -314,7 +314,7 @@ T-09 Commission record on completion       [done — PR #9] [planner]
     └── T-11 Lab wallet dashboard          [done — PR #11]
 
 T-12 Attachment uploads                    [ready — T-06 ✅, R2 provisioned ✅] [planner]
-T-13 Admin panel — KYC review surface      [done — PR #TBD] [planner]
+T-13 Admin panel — KYC review surface      [done — PR #17] [planner]
 <!-- T-13 scope: KYC-review only. T-13b covers role-management + order oversight. -->
 
 T-14 Payment provider normalization        [done — PR #13] [planner]
@@ -396,7 +396,7 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | T-17 PESONet virtual account | T-14 ✅ | 3 | ✅ done (PR #14) — pulled forward, completed in Phase 3 |
 | T-20 RA 10173 privacy compliance | T-05 ✅ | 2 | ✅ done (PR #15) — consent capture, privacy notice, enum-drift fence |
 | T-15 Lab KYC upload | T-02 ✅ | 2 | ✅ done (PR #16) — LabDocument model, KycStatus enum, R2 presigned PUT, checkout gate |
-| T-13 Admin panel — KYC review surface | T-01 ✅ + T-15 ✅ | 1 | ✅ done (PR #TBD) — ADMIN-gated KYC review queue + approve/reject; T-13b (role mgmt + order oversight) is follow-up |
+| T-13 Admin panel — KYC review surface | T-01 ✅ + T-15 ✅ | 1 | ✅ done (PR #17) — ADMIN-gated KYC review queue + approve/reject; T-13b (role mgmt + order oversight) is follow-up |
 | T-12 Attachment uploads | T-06 ✅ + R2 ✅ | 3 | **Now unblocked** — R2 provisioned (T-15); reuses src/lib/storage/r2.ts; client spec + lab result PDFs |
 | T-18 Lab accreditation verification | T-02 ✅ + T-13 | 2 | ITA 2023 compliance; still blocked by T-13 |
 | T-19 Dispute and redress | T-06 ✅ + T-07 ✅ | 2 | ITA 2023 internal redress; schema migration needed (DISPUTED status) |
@@ -679,7 +679,7 @@ separate spike ticket to evaluate options.
 
 ### T-13 — Admin panel `[planner]`
 **Branch:** `feat/T13-admin`
-**Status:** done (KYC-review surface, PR #TBD) — T-13b (role mgmt + order oversight) is the follow-up
+**Status:** done (KYC-review surface, PR #17) — T-13b (role mgmt + order oversight) is the follow-up
 **Why planner:** Scope is deliberately undefined at this stage — plan must define the surface area (which operations, which pages) before implementation. Touches role-gating across multiple existing slices and will likely require new middleware or layout-level auth guards.
 
 Lab verification (`isVerified`) and order oversight deferred to T-13b. KYC review surface shipped.
