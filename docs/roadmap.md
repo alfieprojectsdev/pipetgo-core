@@ -325,7 +325,7 @@ T-16 Idempotency key table                [done — PR #12] [planner]
 T-17 PESONet virtual account integration  [done — PR #14] [planner]
 
 ── Phase 3 regulatory ──────────────────────────────────────────────────────
-T-18 Lab accreditation verification       [blocked: T-02, T-13] [planner]
+T-18 Lab accreditation verification       [ready — T-02 ✅, T-13 ✅ (merged PR #17)] [planner]
     (ISO 17025 / ITA solidary liability)
 T-19 Dispute and redress mechanism        [blocked: T-06, schema migration] [planner]
     (ITA 2023 internal redress requirement)
@@ -396,9 +396,10 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | T-17 PESONet virtual account | T-14 ✅ | 3 | ✅ done (PR #14) — pulled forward, completed in Phase 3 |
 | T-20 RA 10173 privacy compliance | T-05 ✅ | 2 | ✅ done (PR #15) — consent capture, privacy notice, enum-drift fence |
 | T-15 Lab KYC upload | T-02 ✅ | 2 | ✅ done (PR #16) — LabDocument model, KycStatus enum, R2 presigned PUT, checkout gate |
-| T-13 Admin panel — KYC review surface | T-01 ✅ + T-15 ✅ | 1 | ✅ done (PR #17) — ADMIN-gated KYC review queue + approve/reject; T-13b (role mgmt + order oversight) is follow-up |
-| T-12 Attachment uploads | T-06 ✅ + R2 ✅ | 3 | **Now unblocked** — R2 provisioned (T-15); reuses src/lib/storage/r2.ts; client spec + lab result PDFs |
-| T-18 Lab accreditation verification | T-02 ✅ + T-13 | 2 | ITA 2023 compliance; still blocked by T-13 |
+| T-13 Admin panel — KYC review surface | T-01 ✅ + T-15 ✅ | 1 | ✅ done (PR #17, merged `2e9c8cc`) — ADMIN-gated KYC review queue + approve/reject; deployed to dev + admin bootstrapped (`alfieprojects.dev@gmail.com`); T-13b (role mgmt + order oversight) is follow-up |
+| T-18 Lab accreditation verification | T-02 ✅ + T-13 ✅ | 2 | **Now unblocked (T-13 merged)** — ITA 2023 / ISO 17025; reuses the admin slice + auth patterns; operates `Lab.isVerified` (distinct from `kycStatus`). **Recommended next.** |
+| T-12 Attachment uploads | T-06 ✅ + R2 ✅ | 3 | **Now unblocked** — R2 provisioned (T-15); reuses src/lib/storage/r2.ts (presigned GET added in T-13); client spec + lab result PDFs |
+| T-13b Admin role mgmt + order oversight | T-13 ✅ | 2 | Follow-up spun out of T-13; privilege-escalation surface — own audit focus |
 | T-19 Dispute and redress | T-06 ✅ + T-07 ✅ | 2 | ITA 2023 internal redress; schema migration needed (DISPUTED status) |
 
 **End state:** Full roadmap complete, including regulatory compliance layer.
