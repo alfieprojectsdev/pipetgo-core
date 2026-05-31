@@ -56,6 +56,19 @@ After every 3–5 merged PRs, review the diffs and all review comments (CodeRabb
 
 **Trigger:** invoke by saying "run the Compounding Protocol" at any milestone. Last run after PR #17 (2026-05-31).
 
+## The DevOps Readiness Protocol
+
+Compounding handles the **code** path. This handles the **environment** path — the
+provisioning/runtime gaps that surface right after code is confidently "done." Two arms, both
+in `docs/devops-discipline.md`:
+
+- **Pre-Flight Checklist** (proactive) — run before any "run / verify / deploy merged code" step.
+- **DevOps Discipline** (reactive) — append-only `cause → symptom → fix` lessons; each new lesson sharpens a Pre-Flight line.
+
+**Trigger:** invoke by saying "run the DevOps Readiness Protocol", or whenever a
+provisioning/environment issue blocks a session after code is merged. Capture one lesson
+(+ its Pre-Flight line) and commit directly to `main` with `docs: devops protocol — <lesson name>`. Last run: seeded 2026-05-31 (T-13 local-deploy session).
+
 ## Implementation Discipline
 
 - **Unhandled states must throw, never default silently.** Every unhandled enum branch, `??` fallback, `indexOf(x) === -1` coercion, `parseFloat` on untrusted input, `findFirst` on a uniqueness invariant, and missing try/catch around Prisma must `throw new Error(...)` so contract violations surface in dev rather than producing wrong output in prod. See `src/lib/auth.ts` — `throw new Error('JWT token missing role')` — as the canonical example.

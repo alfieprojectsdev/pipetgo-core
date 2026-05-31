@@ -140,6 +140,8 @@ survive the migration — only their business semantics change.
 
 Checklist of everything that must be provisioned outside the codebase for the platform to function end-to-end. Mark items `[x]` as completed.
 
+> **Before running or deploying merged code, run the Pre-Flight Checklist in [`devops-discipline.md`](devops-discipline.md).** It catches the environment gaps (deps, per-env migration, env-file chain, ports, identity-before-grant) that otherwise surface only at runtime. That doc also holds the append-only DevOps lessons; this section stays the per-environment "what to provision" list.
+
 ---
 
 ### Hosting & Deployment
