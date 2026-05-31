@@ -28,7 +28,7 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 **What's next (engineering — no longer blocks lab approval):**
 - **T-18 Lab accreditation verification** — ISO 17025 / ITA solidary-liability gate (`Lab.isVerified`, distinct from KYC). Unblocked by T-13; recommended next.
 - **T-12 Attachment uploads** — client spec documents and lab result PDFs. R2 provisioned; unblocked.
-- **T-13b** — admin role management + order/transaction oversight, spun out of T-13 (privilege-escalation surface, own audit focus).
+- **T-13b / T-13c** — spun out of T-13: T-13b is read-only admin order/transaction oversight (pull forward only on a real ops need); T-13c is admin role management, deferred until its own privilege-escalation audit.
 
 **What must happen before first revenue (non-engineering):**
 1. **BIR Form 2303** — business registration certificate; required before issuing official receipts
@@ -317,7 +317,9 @@ T-09 Commission record on completion       [done — PR #9] [planner]
 
 T-12 Attachment uploads                    [ready — T-06 ✅, R2 provisioned ✅] [planner]
 T-13 Admin panel — KYC review surface      [done — PR #17] [planner]
-<!-- T-13 scope: KYC-review only. T-13b covers role-management + order oversight. -->
+T-13b Admin order oversight (read-only)     [ready — T-13 ✅] [planner]
+T-13c Admin role management                 [deferred — needs privilege-escalation audit] [planner]
+<!-- T-13 shipped KYC-review only. T-13b = read-only order/transaction oversight; T-13c = UserRole grant/revoke, deferred until its own security audit. -->
 
 T-14 Payment provider normalization        [done — PR #13] [planner]
 
@@ -401,7 +403,8 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | T-13 Admin panel — KYC review surface | T-01 ✅ + T-15 ✅ | 1 | ✅ done (PR #17, merged `2e9c8cc`) — ADMIN-gated KYC review queue + approve/reject; deployed to dev + admin bootstrapped (`alfieprojects.dev@gmail.com`); T-13b (role mgmt + order oversight) is follow-up |
 | T-18 Lab accreditation verification | T-02 ✅ + T-13 ✅ | 2 | **Now unblocked (T-13 merged)** — ITA 2023 / ISO 17025; reuses the admin slice + auth patterns; operates `Lab.isVerified` (distinct from `kycStatus`). **Recommended next.** |
 | T-12 Attachment uploads | T-06 ✅ + R2 ✅ | 3 | **Now unblocked** — R2 provisioned (T-15); reuses src/lib/storage/r2.ts (presigned GET added in T-13); client spec + lab result PDFs |
-| T-13b Admin role mgmt + order oversight | T-13 ✅ | 2 | Follow-up spun out of T-13; privilege-escalation surface — own audit focus |
+| T-13b Admin order oversight (read-only) | T-13 ✅ | 1 | Read-only admin view of all orders/transactions/payouts; clones the T-13 admin read patterns + reuses the route-group guard — no `UserRole` writes. Pull forward only on a concrete ops/support need. |
+| T-13c Admin role management | T-13 ✅ | 2 | **Deferred — privilege-escalation surface.** `UserRole` grant/revoke; needs last-admin + self-demotion invariants, an audit log, and a dedicated security review. Manual-SQL bootstrap (DL-008) stays the only ADMIN-minting path until then. |
 | T-19 Dispute and redress | T-06 ✅ + T-07 ✅ | 2 | ITA 2023 internal redress; schema migration needed (DISPUTED status) |
 
 **End state:** Full roadmap complete, including regulatory compliance layer.
@@ -415,7 +418,7 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | 3 — Financial | ✅ **COMPLETE** | 4/4 | ✅ **MVP gate cleared** |
 | 4 — Post-MVP | 4/6 done | 67% | |
 
-**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs). T-13b (role management + order oversight) is the follow-up. T-12 is next (attachments, now unblocked).
+**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs). T-18 (accreditation, ISO 17025) is recommended next; T-12 (attachments) follows. The remaining T-13 scope is split into T-13b (read-only order oversight) and T-13c (role management, deferred — privilege-escalation audit).
 
 ---
 
@@ -682,10 +685,10 @@ separate spike ticket to evaluate options.
 
 ### T-13 — Admin panel `[planner]`
 **Branch:** `feat/T13-admin`
-**Status:** done (KYC-review surface, PR #17) — T-13b (role mgmt + order oversight) is the follow-up
+**Status:** done (KYC-review surface, PR #17) — follow-ups: T-13b (order oversight, read-only), T-13c (role management, deferred)
 **Why planner:** Scope is deliberately undefined at this stage — plan must define the surface area (which operations, which pages) before implementation. Touches role-gating across multiple existing slices and will likely require new middleware or layout-level auth guards.
 
-Lab verification (`isVerified`) and order oversight deferred to T-13b. KYC review surface shipped.
+Lab verification (`isVerified`) → T-18. Order oversight → T-13b (read-only). Role management → T-13c (deferred — needs privilege-escalation audit). KYC review surface shipped.
 `UserRole.ADMIN` exists in schema; no admin slices exist.
 
 ---
