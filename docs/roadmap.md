@@ -11,7 +11,7 @@ Workflow: `[planner]` = requires explore → plan → /clear → execute sequenc
 
 *For CEO / CMO / CFO context. Engineering detail follows below.*
 
-### Where we are (as of 2026-06-01)
+### Where we are (as of 2026-06-02)
 
 PipetGo V2 has a working, end-to-end lab testing marketplace. A client can discover a lab, place an order, pay (card or bank transfer), and the platform splits the commission automatically. Labs can manage services, receive orders, issue quotes, and track their commission balance. The full payment infrastructure is built and tested.
 
@@ -27,7 +27,7 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 - **Lab accreditation verification (T-18, PR #18)** — ISO 17025 / ITA solidary-liability gate (`Lab.isVerified`, distinct from KYC). Only verified labs surface in the marketplace and can receive orders (services/browse read gate + create-order write gate). Admin verify/reject UI shipped. **Requires `npx prisma db push` of the 3 accreditation audit columns per Neon env before the flow runs.**
 
 **What's next (engineering — no longer blocks lab approval):**
-- **T-12 Attachment uploads** — client spec documents and lab result PDFs. R2 provisioned; reuses `src/lib/storage/r2.ts`; `Attachment` model already in schema. **Recommended next.**
+- **T-12 Attachment uploads — plan written, ready to implement.** Client spec documents and lab result PDFs, order-scoped. Plan at `plans/T-12-attachment-uploads.md` (5306 lines, QR-verified): CLIENT uploads SPECIFICATION on order-detail (20 MB), LAB_ADMIN uploads RESULT on lab-fulfilment (50 MB, PDF-only, while IN_PROGRESS). Reuses `src/lib/storage/r2.ts`; adds `Attachment.r2Key` (server-trusted key, on-demand presigned download). **An implementation session is scheduled** — 5 milestones / 3 waves.
 - **T-13b / T-13c** — spun out of T-13: T-13b is read-only admin order/transaction oversight (pull forward only on a real ops need); T-13c is admin role management, deferred until its own privilege-escalation audit.
 
 > Per-environment after pulling T-18: `npx prisma db push` to apply `Lab.accreditationReviewedById`, `accreditationReviewedAt`, `accreditationRejectionReason` — else the verify/reject flow crashes at runtime on the audit fields (not a type error).
@@ -45,8 +45,8 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 
 | Stakeholder | Status | Blocker |
 |---|---|---|
-| **CEO** | Platform is feature-complete for MVP. KYC gate is live (T-15) and the admin approval UI shipped (T-13, PR #17). Remaining blockers are legal, not engineering. | Legal prerequisites above (BIR 2303, NPC registration, Xendit KYB) |
-| **CMO** | Client-facing flows are complete. Labs upload KYC documents and an admin can review and approve them in-app (T-13). | At least one lab completing KYC + admin review |
+| **CEO** | Platform is feature-complete for MVP. KYC gate live (T-15), admin approval UI shipped (T-13, PR #17), ISO 17025 accreditation gate live (T-18, PR #18). Only remaining engineering item is order attachments (T-12, plan written, implementation scheduled) — not a launch blocker. Remaining blockers are legal, not engineering. | Legal prerequisites above (BIR 2303, NPC registration, Xendit KYB) |
+| **CMO** | Client-facing flows are complete. Labs upload KYC documents and an admin reviews/approves them in-app (T-13); only accredited labs (T-18) are listable. Order attachments — clients attach spec documents, labs deliver result PDFs in-app — is planned next (T-12). | At least one lab completing KYC + admin review |
 | **CFO** | Commission accounting is built: every order generates a `Payout` record with `grossAmount`, `platformFee`, `netAmount` using `Decimal` (no float errors). BIR compliance (Form 2303, OR issuance) is a legal track, not an engineering track. VAT threshold tracking must start from transaction #1. | BIR 2303 + NPC registration (both non-engineering) |
 
 ---
@@ -321,7 +321,7 @@ T-09 Commission record on completion       [done — PR #9] [planner]
 └── T-10 Commission settlement webhook     [done — PR #10] [planner]
     └── T-11 Lab wallet dashboard          [done — PR #11]
 
-T-12 Attachment uploads                    [ready — T-06 ✅, R2 provisioned ✅] [planner] ← NEXT
+T-12 Attachment uploads                    [plan written — plans/T-12-attachment-uploads.md] [planner] ← NEXT (impl scheduled)
 T-13 Admin panel — KYC review surface      [done — PR #17] [planner]
 T-13b Admin order oversight (read-only)     [ready — T-13 ✅] [planner]
 T-13c Admin role management                 [deferred — needs privilege-escalation audit] [planner]
@@ -424,7 +424,7 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | 3 — Financial | ✅ **COMPLETE** | 4/4 | ✅ **MVP gate cleared** |
 | 4 — Post-MVP | 5/6 done | 83% | |
 
-**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs); T-18 accreditation (ISO 17025) merged (PR #18 — `Lab.isVerified` marketplace gate). **T-12 (attachments) is recommended next** — the last clean Phase-4 engineering ticket. The remaining T-13 scope is split into T-13b (read-only order oversight, pull forward only on real ops need) and T-13c (role management, deferred — privilege-escalation audit). T-19 (dispute/redress) remains blocked on schema migration.
+**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs); T-18 accreditation (ISO 17025) merged (PR #18 — `Lab.isVerified` marketplace gate). **T-12 (attachments) is the last clean Phase-4 engineering ticket — plan written (`plans/T-12-attachment-uploads.md`, QR-verified), implementation session scheduled.** The remaining T-13 scope is split into T-13b (read-only order oversight, pull forward only on real ops need) and T-13c (role management, deferred — privilege-escalation audit). T-19 (dispute/redress) remains blocked on schema migration.
 
 ---
 
