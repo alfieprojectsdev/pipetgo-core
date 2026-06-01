@@ -147,7 +147,7 @@ describe('approveOrRejectKyc', () => {
     expect(labCall.data.kycReviewedAt).toBeInstanceOf(Date)
 
     expect(mocks.labDocumentUpdateMany).toHaveBeenCalledWith({
-      where: { labId: 'lab-1', status: 'UPLOADED' },
+      where: { labId: 'lab-1', status: 'UPLOADED', documentType: { in: ['BIR_2303', 'DTI_SEC', 'OTHER'] } },
       data: { status: 'VERIFIED' },
     })
   })
@@ -170,7 +170,7 @@ describe('approveOrRejectKyc', () => {
     })
 
     expect(mocks.labDocumentUpdateMany).toHaveBeenCalledWith({
-      where: { labId: 'lab-1', status: 'UPLOADED' },
+      where: { labId: 'lab-1', status: 'UPLOADED', documentType: { in: ['BIR_2303', 'DTI_SEC', 'OTHER'] } },
       data: { status: 'REJECTED' },
     })
   })

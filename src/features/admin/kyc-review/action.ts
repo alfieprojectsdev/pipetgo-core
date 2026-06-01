@@ -8,6 +8,14 @@ import { prisma } from '@/lib/prisma'
 type ActionState = { message: string } | null
 
 /**
+ * KYC document types. The KYC cascade must be scoped to these so it never advances an
+ * ACCREDITATION_CERTIFICATE (or any future LabDocument variety) that coexists in the same
+ * table for the lab. Mirrors DOCUMENT_TYPE_ALLOWLIST in labs/kyc-upload/upload-action.ts —
+ * kept local rather than imported to respect the VSA slice boundary (ADR-001). (ref: T-18)
+ */
+const KYC_DOCUMENT_TYPES = ['BIR_2303', 'DTI_SEC', 'OTHER'] as const
+
+/**
  * Approves or rejects a lab's KYC submission.
  *
  * Authorization: role===ADMIN re-checked here independently of the layout guard —
@@ -77,7 +85,7 @@ export async function approveOrRejectKyc(
       }
 
       await tx.labDocument.updateMany({
-        where: { labId, status: 'UPLOADED' },
+        where: { labId, status: 'UPLOADED', documentType: { in: [...KYC_DOCUMENT_TYPES] } },
         data: { status: decision === 'APPROVED' ? 'VERIFIED' : 'REJECTED' },
       })
 

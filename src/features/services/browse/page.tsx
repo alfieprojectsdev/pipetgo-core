@@ -29,6 +29,10 @@ export default async function ServiceBrowsePage({
   const services = await prisma.labService.findMany({
     where: {
       isActive: true,
+      // ITA 2023 marketplace gate: hide services from labs that have not completed
+      // ISO 17025 accreditation review. Security-critical write gate lives in
+      // create-order/action.ts — this filter is the UX layer on top. (ref: DL-006)
+      lab: { isVerified: true },
       ...(activeCategory ? { category: activeCategory } : {}),
     },
     include: { lab: { select: { name: true, location: true } } },

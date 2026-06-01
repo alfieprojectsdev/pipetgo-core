@@ -90,6 +90,18 @@ Self-service role management is spun out as T-13b. See the DevOps checklist in
 
 `prisma/migrations/` is gitignored. The Lab audit columns (`kycReviewedById`,
 `kycReviewedAt`, `kycRejectionReason`, reviewer relation) are applied per-environment via
-`npx prisma migrate dev`. `schema.prisma` is the committed source of truth. A fresh or CI
+`npx prisma db push` (dev DB is push-managed; see devops-discipline.md). `schema.prisma` is the committed source of truth. A fresh or CI
 environment missing this step gets a runtime crash on the audit fields, not a type error.
 See the DevOps checklist in `docs/roadmap.md` for the required apply command.
+
+## Doc cascade is scoped to KYC document types
+
+`approveOrRejectKyc` cascades UPLOADED documents via
+`{labId, status: 'UPLOADED', documentType: { in: KYC_DOCUMENT_TYPES }}`. The `documentType`
+filter (`KYC_DOCUMENT_TYPES = ['BIR_2303', 'DTI_SEC', 'OTHER']`, mirroring the kyc-upload
+allowlist) is required because `ACCREDITATION_CERTIFICATE` LabDocuments — and any future
+LabDocument variety (T-12 attachments) — coexist in the same table for a lab. Without the
+filter, a KYC approve/reject would advance a coexisting accreditation cert in `UPLOADED`
+state to `VERIFIED`/`REJECTED`, and the accreditation-review queue (which reads
+`{documentType: 'ACCREDITATION_CERTIFICATE', status: 'UPLOADED'}`) would then miss it.
+The accreditation-review cascade is symmetrically scoped. (added in T-18 per CodeRabbit review)
