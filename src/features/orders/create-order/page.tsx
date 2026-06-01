@@ -11,6 +11,9 @@ export type CreateOrderServiceDTO = {
   pricingMode: 'QUOTE_REQUIRED' | 'FIXED' | 'HYBRID'
   pricePerUnit: string | null             // Decimal.toFixed(2) or null — NEVER Prisma.Decimal
   unit: string | null
+  // Carried in the DTO so the page can surface an accreditation-not-verified warning
+  // without a second DB hit. The authoritative gate is the server action. (ref: DL-006)
+  labIsVerified: boolean
   lab: {
     name: string
     location: Record<string, unknown> | null  // Json? field — city, province, country keys
@@ -30,7 +33,7 @@ export default async function CreateOrderPage({
 
   const service = await prisma.labService.findUnique({
     where: { id: params.serviceId, isActive: true },
-    include: { lab: { select: { name: true, location: true, certifications: true } } },
+    include: { lab: { select: { name: true, location: true, certifications: true, isVerified: true } } },
   })
   if (!service) notFound()
 
@@ -42,6 +45,7 @@ export default async function CreateOrderPage({
     pricingMode: service.pricingMode,
     pricePerUnit: service.pricePerUnit?.toFixed(2) ?? null,  // Decimal → string
     unit: service.unit,
+    labIsVerified: service.lab.isVerified,
     lab: {
       name: service.lab.name,
       location: service.lab.location as Record<string, unknown> | null,

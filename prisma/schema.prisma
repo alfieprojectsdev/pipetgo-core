@@ -109,7 +109,8 @@ model User {
   attachments  Attachment[]
   labDocuments LabDocument[]
   // Named relation back-reference for kycReviewedById on Lab. (ref: DL-005)
-  kycReviewedLabs Lab[] @relation("LabKycReviewer")
+  kycReviewedLabs            Lab[] @relation("LabKycReviewer")
+  accreditationReviewedLabs  Lab[] @relation("LabAccreditationReviewer")
 
   @@map("users")
 }
@@ -158,9 +159,14 @@ model Lab {
   kycReviewedById    String?
   kycReviewedAt      DateTime?
   kycRejectionReason String?
+  // Accreditation audit (latest-review-only, independent of kycStatus). (ref: DL-009)
+  accreditationReviewedById    String?
+  accreditationReviewedAt      DateTime?
+  accreditationRejectionReason String?
 
-  owner       User         @relation(fields: [ownerId], references: [id])
-  reviewer    User?        @relation("LabKycReviewer", fields: [kycReviewedById], references: [id])
+  owner                 User         @relation(fields: [ownerId], references: [id])
+  reviewer              User?        @relation("LabKycReviewer", fields: [kycReviewedById], references: [id])
+  accreditationReviewer User?        @relation("LabAccreditationReviewer", fields: [accreditationReviewedById], references: [id])
   services    LabService[]
   orders      Order[]
   attachments Attachment[]

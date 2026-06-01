@@ -167,7 +167,9 @@ Checklist of everything that must be provisioned outside the codebase for the pl
 - [ ] `DATABASE_URL` set in Vercel production environment
 - [ ] `DATABASE_TEST_URL` set in local `.env.test` (not committed)
 - [ ] Prisma migrations applied to production DB (`npx prisma migrate deploy`)
-- [ ] **T-13 audit columns applied per-environment** — `prisma/migrations/` is gitignored (DL-011); run `npx prisma migrate dev` locally and on each Neon branch after pulling T-13. `schema.prisma` is the committed source of truth; missing this step causes a runtime crash on the audit fields, not a type error.
+- [ ] **T-13 audit columns applied per-environment** — `prisma/migrations/` is gitignored (DL-011); apply via `npx prisma db push` on the Neon dev branch (dev DB is push-managed; `migrate dev` would drift/reset). `schema.prisma` is the committed source of truth; missing this step causes a runtime crash on the audit fields, not a type error.
+- [ ] **T-18 accreditation audit columns applied per-environment** — `accreditationReviewedById`, `accreditationReviewedAt`, `accreditationRejectionReason` added to `Lab` in T-18. Apply via `npx prisma db push` (dev DB is push-managed; `migrate dev` would drift/reset the Neon branch). Missing this step causes a runtime crash on the audit fields.
+- [ ] **First verified lab bootstrapped** — the marketplace is empty until at least one lab has `isVerified=true`. Preferred path: a LAB_ADMIN uploads an ISO 17025 cert at `/dashboard/lab/accreditation`, then an ADMIN reviews it at `/dashboard/admin/accreditation` and verifies through the UI. This exercises the real CAS path and leaves an audit trail via `accreditationReviewedById`/`At`. Fallback (no cert available): `UPDATE "labs" SET "isVerified" = true, "accreditationReviewedAt" = now() WHERE id = '<lab-id>';`
 - [ ] **First ADMIN user bootstrapped** — `UPDATE "users" SET role = 'ADMIN' WHERE email = '<admin-email>';` on the target Neon branch (DL-008). No in-app promotion path exists.
 - [ ] Connection pooling confirmed (Neon serverless driver or PgBouncer)
 

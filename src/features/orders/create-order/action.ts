@@ -16,14 +16,21 @@ export async function createOrder(
   _prevState: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const serviceId = formData.get('serviceId') as string | null
+  // FormData.get types serviceId as unknown; narrow before trusting. (ref: DL-008)
+  const serviceIdValue = formData.get('serviceId')
+  const serviceId = typeof serviceIdValue === 'string' ? serviceIdValue : null
   if (!serviceId) return { message: 'Missing service ID.' }
 
   // Re-fetch from DB — do not trust any pricingMode value from the client (TOCTOU guard)
   const service = await prisma.labService.findUnique({
     where: { id: serviceId, isActive: true },
+    include: { lab: { select: { isVerified: true } } },
   })
   if (!service) return { message: 'Service no longer available.' }
+  // ITA 2023 solidary-liability gate: reject server-side before any DB write.
+  // The /services browse filter is the UX layer; a client can POST serviceId directly
+  // to this action without navigating through the marketplace. (ref: DL-006)
+  if (!service.lab.isVerified) return { message: 'This service is not currently available — the lab has not completed accreditation.' }
 
   const session = await auth()
   if (!session || !session.user.id || session.user.role !== 'CLIENT') {
