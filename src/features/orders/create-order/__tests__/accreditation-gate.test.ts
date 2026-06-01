@@ -6,7 +6,7 @@
  * The create-order gate is the liability-bearing control: a client can POST
  * a serviceId directly without navigating through /services. (ref: DL-006, DL-012)
  */
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PricingMode } from '@prisma/client'
 import { Decimal } from '@prisma/client/runtime/library'
 

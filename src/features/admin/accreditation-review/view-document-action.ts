@@ -30,7 +30,7 @@ export async function viewAccreditationDocument(labDocumentId: string): Promise<
       where: { id: labDocumentId },
       select: { r2Key: true },
     })
-  } catch (e) {
+  } catch {
     return { message: 'Unable to retrieve document.' }
   }
 
@@ -41,7 +41,7 @@ export async function viewAccreditationDocument(labDocumentId: string): Promise<
   let url: string
   try {
     url = await generatePresignedGetUrl(doc.r2Key)
-  } catch (e) {
+  } catch {
     return { message: 'Unable to retrieve document.' }
   }
 

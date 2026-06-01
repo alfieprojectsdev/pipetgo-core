@@ -94,13 +94,14 @@ Self-service role management is spun out as T-13b. See the DevOps checklist in
 environment missing this step gets a runtime crash on the audit fields, not a type error.
 See the DevOps checklist in `docs/roadmap.md` for the required apply command.
 
-## Unscoped doc cascade — safe as long as only KYC docs exist per lab
+## Doc cascade is scoped to KYC document types
 
-`approveOrRejectKyc` cascades UPLOADED documents via `{labId, status: 'UPLOADED'}` with no
-`documentType` filter. This is safe as long as a lab's only LabDocuments are KYC docs.
-ACCREDITATION_CERTIFICATE LabDocuments coexist in the same table. The accreditation-review
-cascade is scoped (`{labId, documentType: 'ACCREDITATION_CERTIFICATE', status: 'UPLOADED'}`),
-so it does not advance KYC docs. However, if this KYC cascade runs while an accreditation
-cert is in UPLOADED state, it will advance that cert to VERIFIED/REJECTED alongside the
-KYC docs — potentially incorrect. Scope this cascade to `documentType` IN KYC types before
-T-12 (attachment uploads) introduces further LabDocument variety.
+`approveOrRejectKyc` cascades UPLOADED documents via
+`{labId, status: 'UPLOADED', documentType: { in: KYC_DOCUMENT_TYPES }}`. The `documentType`
+filter (`KYC_DOCUMENT_TYPES = ['BIR_2303', 'DTI_SEC', 'OTHER']`, mirroring the kyc-upload
+allowlist) is required because `ACCREDITATION_CERTIFICATE` LabDocuments — and any future
+LabDocument variety (T-12 attachments) — coexist in the same table for a lab. Without the
+filter, a KYC approve/reject would advance a coexisting accreditation cert in `UPLOADED`
+state to `VERIFIED`/`REJECTED`, and the accreditation-review queue (which reads
+`{documentType: 'ACCREDITATION_CERTIFICATE', status: 'UPLOADED'}`) would then miss it.
+The accreditation-review cascade is symmetrically scoped. (added in T-18 per CodeRabbit review)

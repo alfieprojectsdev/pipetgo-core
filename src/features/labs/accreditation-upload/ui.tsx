@@ -81,9 +81,11 @@ export function AccreditationUploadUi({ dto }: { dto: AccreditationPageDTO }) {
     const file = fileInput.files[0]
 
     if (!(ALLOWED_MIME_TYPES as readonly string[]).includes(file.type)) {
+      setPutError('Unsupported file type. Allowed: PDF, JPEG, PNG.')
       return
     }
     if (file.size > MAX_BYTES) {
+      setPutError('File exceeds 20 MB limit.')
       return
     }
 
