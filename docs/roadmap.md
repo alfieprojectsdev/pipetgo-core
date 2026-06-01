@@ -11,7 +11,7 @@ Workflow: `[planner]` = requires explore → plan → /clear → execute sequenc
 
 *For CEO / CMO / CFO context. Engineering detail follows below.*
 
-### Where we are (as of 2026-05-31)
+### Where we are (as of 2026-06-01)
 
 PipetGo V2 has a working, end-to-end lab testing marketplace. A client can discover a lab, place an order, pay (card or bank transfer), and the platform splits the commission automatically. Labs can manage services, receive orders, issue quotes, and track their commission balance. The full payment infrastructure is built and tested.
 
@@ -24,11 +24,13 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 - Webhook idempotency and payment retry handling — resilient to duplicate deliveries and failed payments
 - PayMongo migration path ready (T-14 normalisation layer in place)
 - **Admin KYC review panel (T-13, PR #17)** — an ADMIN can view a lab's submitted documents and approve/reject; `kycStatus` reaches APPROVED through the UI, not just a direct DB write. This closes the lab-approval path that gates first revenue.
+- **Lab accreditation verification (T-18, PR #18)** — ISO 17025 / ITA solidary-liability gate (`Lab.isVerified`, distinct from KYC). Only verified labs surface in the marketplace and can receive orders (services/browse read gate + create-order write gate). Admin verify/reject UI shipped. **Requires `npx prisma db push` of the 3 accreditation audit columns per Neon env before the flow runs.**
 
 **What's next (engineering — no longer blocks lab approval):**
-- **T-18 Lab accreditation verification** — ISO 17025 / ITA solidary-liability gate (`Lab.isVerified`, distinct from KYC). Unblocked by T-13; recommended next.
-- **T-12 Attachment uploads** — client spec documents and lab result PDFs. R2 provisioned; unblocked.
+- **T-12 Attachment uploads** — client spec documents and lab result PDFs. R2 provisioned; reuses `src/lib/storage/r2.ts`; `Attachment` model already in schema. **Recommended next.**
 - **T-13b / T-13c** — spun out of T-13: T-13b is read-only admin order/transaction oversight (pull forward only on a real ops need); T-13c is admin role management, deferred until its own privilege-escalation audit.
+
+> Per-environment after pulling T-18: `npx prisma db push` to apply `Lab.accreditationReviewedById`, `accreditationReviewedAt`, `accreditationRejectionReason` — else the verify/reject flow crashes at runtime on the audit fields (not a type error).
 
 **What must happen before first revenue (non-engineering):**
 1. **BIR Form 2303** — business registration certificate; required before issuing official receipts
@@ -70,7 +72,7 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 | Labs onboard before KYC gate is enforced | **High** — lab can receive payments without verification | ✅ T-15 + T-13 merged — KYC gate live on both checkout paths; an admin reviews and approves/rejects in-app (T-13, PR #17). Labs default to PENDING and require admin approval to reach APPROVED. |
 | Xendit KYB not approved before launch | **High** — live payment processing blocked | Start KYB submission in parallel with T-15 engineering |
 | PayMongo sub-merchant support unconfirmed | **Medium** — affects payment processor migration | T-14 normalisation layer makes migration low-risk whenever confirmed |
-| `Lab.isVerified` (ISO 17025) gate not yet enforced | **Medium** — ITA 2023 solidary liability | T-18 post-MVP; admin runbook required before first lab goes live |
+| `Lab.isVerified` (ISO 17025) gate not yet enforced | **Low** — ITA 2023 solidary liability | ✅ T-18 merged (PR #18) — verify/reject UI + services/browse read gate + create-order write gate live; unverified labs cannot surface or receive orders. Remaining: `db push` audit columns per env, and an admin runbook for verifying ISO 17025 certs before first lab goes live. |
 
 ---
 
@@ -167,8 +169,8 @@ Checklist of everything that must be provisioned outside the codebase for the pl
 - [ ] `DATABASE_URL` set in Vercel production environment
 - [ ] `DATABASE_TEST_URL` set in local `.env.test` (not committed)
 - [ ] Prisma migrations applied to production DB (`npx prisma migrate deploy`)
-- [ ] **T-13 audit columns applied per-environment** — `prisma/migrations/` is gitignored (DL-011); apply via `npx prisma db push` on the Neon dev branch (dev DB is push-managed; `migrate dev` would drift/reset). `schema.prisma` is the committed source of truth; missing this step causes a runtime crash on the audit fields, not a type error.
-- [ ] **T-18 accreditation audit columns applied per-environment** — `accreditationReviewedById`, `accreditationReviewedAt`, `accreditationRejectionReason` added to `Lab` in T-18. Apply via `npx prisma db push` (dev DB is push-managed; `migrate dev` would drift/reset the Neon branch). Missing this step causes a runtime crash on the audit fields.
+- [ ] **T-13 audit columns applied per-environment** — `prisma/migrations/` is gitignored (DL-011); run `npx prisma db push` on each Neon branch after pulling T-13 (dev/CI branches are push-managed, not `migrate dev` — that would drift/reset). `schema.prisma` is the committed source of truth; missing this step causes a runtime crash on the audit fields, not a type error.
+- [ ] **T-18 accreditation audit columns applied per-environment** — same mechanism: `npx prisma db push` to apply `Lab.accreditationReviewedById`, `accreditationReviewedAt`, `accreditationRejectionReason` after pulling T-18 (PR #18). **Not yet applied to any env as of merge** (DATABASE_URL was unset in the build session) — runtime crash on verify/reject until done.
 - [ ] **First verified lab bootstrapped** — the marketplace is empty until at least one lab has `isVerified=true`. Preferred path: a LAB_ADMIN uploads an ISO 17025 cert at `/dashboard/lab/accreditation`, then an ADMIN reviews it at `/dashboard/admin/accreditation` and verifies through the UI. This exercises the real CAS path and leaves an audit trail via `accreditationReviewedById`/`At`. Fallback (no cert available): `UPDATE "labs" SET "isVerified" = true, "accreditationReviewedAt" = now() WHERE id = '<lab-id>';`
 - [ ] **First ADMIN user bootstrapped** — `UPDATE "users" SET role = 'ADMIN' WHERE email = '<admin-email>';` on the target Neon branch (DL-008). No in-app promotion path exists.
 - [ ] Connection pooling confirmed (Neon serverless driver or PgBouncer)
@@ -319,7 +321,7 @@ T-09 Commission record on completion       [done — PR #9] [planner]
 └── T-10 Commission settlement webhook     [done — PR #10] [planner]
     └── T-11 Lab wallet dashboard          [done — PR #11]
 
-T-12 Attachment uploads                    [ready — T-06 ✅, R2 provisioned ✅] [planner]
+T-12 Attachment uploads                    [ready — T-06 ✅, R2 provisioned ✅] [planner] ← NEXT
 T-13 Admin panel — KYC review surface      [done — PR #17] [planner]
 T-13b Admin order oversight (read-only)     [ready — T-13 ✅] [planner]
 T-13c Admin role management                 [deferred — needs privilege-escalation audit] [planner]
@@ -333,8 +335,8 @@ T-16 Idempotency key table                [done — PR #12] [planner]
 T-17 PESONet virtual account integration  [done — PR #14] [planner]
 
 ── Phase 3 regulatory ──────────────────────────────────────────────────────
-T-18 Lab accreditation verification       [ready — T-02 ✅, T-13 ✅ (merged PR #17)] [planner]
-    (ISO 17025 / ITA solidary liability)
+T-18 Lab accreditation verification       [done — PR #18] [planner]
+    (ISO 17025 / ITA solidary liability; db push of audit columns still owed per env)
 T-19 Dispute and redress mechanism        [blocked: T-06, schema migration] [planner]
     (ITA 2023 internal redress requirement)
 T-20 RA 10173 privacy compliance          [done — PR #15] [planner]
@@ -420,9 +422,9 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | 1 — Core flows | ✅ **COMPLETE** | 5/5 | |
 | 2 — Transactional | ✅ **COMPLETE** | 5/5 | |
 | 3 — Financial | ✅ **COMPLETE** | 4/4 | ✅ **MVP gate cleared** |
-| 4 — Post-MVP | 4/6 done | 67% | |
+| 4 — Post-MVP | 5/6 done | 83% | |
 
-**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs). T-18 (accreditation, ISO 17025) is recommended next; T-12 (attachments) follows. The remaining T-13 scope is split into T-13b (read-only order oversight) and T-13c (role management, deferred — privilege-escalation audit).
+**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs); T-18 accreditation (ISO 17025) merged (PR #18 — `Lab.isVerified` marketplace gate). **T-12 (attachments) is recommended next** — the last clean Phase-4 engineering ticket. The remaining T-13 scope is split into T-13b (read-only order oversight, pull forward only on real ops need) and T-13c (role management, deferred — privilege-escalation audit). T-19 (dispute/redress) remains blocked on schema migration.
 
 ---
 
