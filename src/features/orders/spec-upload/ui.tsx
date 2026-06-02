@@ -28,11 +28,14 @@ export function ResultAttachmentListUi({ attachments }: { attachments: Attachmen
   async function handleView(attachmentId: string) {
     setViewError(null)
     setViewUrl(null)
+    const win = window.open('', '_blank')
     const res = await viewOrderAttachment(attachmentId)
     if ('url' in res) {
       setViewUrl(res.url)
-      window.open(res.url, '_blank')
+      if (win) win.location.href = res.url
+      else window.location.href = res.url
     } else {
+      win?.close()
       setViewError(res.message ?? 'Unable to retrieve file.')
     }
   }
@@ -131,11 +134,14 @@ export function SpecUploadUi({ orderId, attachments }: { orderId: string; attach
   async function handleView(attachmentId: string) {
     setViewError(null)
     setViewUrl(null)
+    const win = window.open('', '_blank')
     const res = await viewOrderAttachment(attachmentId)
     if ('url' in res) {
       setViewUrl(res.url)
-      window.open(res.url, '_blank')
+      if (win) win.location.href = res.url
+      else window.location.href = res.url
     } else {
+      win?.close()
       setViewError(res.message ?? 'Unable to retrieve file.')
     }
   }
@@ -162,10 +168,11 @@ export function SpecUploadUi({ orderId, attachments }: { orderId: string; attach
       {viewUrl   && <p className="text-xs text-gray-500">Opened in new tab.</p>}
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="spec-file-input" className="block text-sm font-medium text-gray-700 mb-1">
             Specification document (PDF, JPEG, PNG — max 20 MB)
           </label>
           <input
+            id="spec-file-input"
             ref={fileRef}
             type="file"
             accept="application/pdf,image/jpeg,image/png"

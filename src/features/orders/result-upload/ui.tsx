@@ -27,11 +27,19 @@ export function SpecAttachmentListUi({ attachments }: { attachments: AttachmentD
 
   async function handleView(attachmentId: string) {
     setViewError(null)
-    const res = await viewResultAttachment(attachmentId)
-    if ('url' in res) {
-      window.open(res.url, '_blank')
-    } else {
-      setViewError(res.message ?? 'Unable to retrieve file.')
+    const win = window.open('', '_blank')
+    try {
+      const res = await viewResultAttachment(attachmentId)
+      if ('url' in res) {
+        if (win) win.location.href = res.url
+        else window.location.href = res.url
+      } else {
+        win?.close()
+        setViewError(res.message ?? 'Unable to retrieve file.')
+      }
+    } catch {
+      win?.close()
+      setViewError('Unable to retrieve file.')
     }
   }
 
@@ -126,11 +134,19 @@ export function ResultUploadUi({ orderId, attachments }: { orderId: string; atta
 
   async function handleView(attachmentId: string) {
     setViewError(null)
-    const res = await viewResultAttachment(attachmentId)
-    if ('url' in res) {
-      window.open(res.url, '_blank')
-    } else {
-      setViewError(res.message ?? 'Unable to retrieve file.')
+    const win = window.open('', '_blank')
+    try {
+      const res = await viewResultAttachment(attachmentId)
+      if ('url' in res) {
+        if (win) win.location.href = res.url
+        else window.location.href = res.url
+      } else {
+        win?.close()
+        setViewError(res.message ?? 'Unable to retrieve file.')
+      }
+    } catch {
+      win?.close()
+      setViewError('Unable to retrieve file.')
     }
   }
 

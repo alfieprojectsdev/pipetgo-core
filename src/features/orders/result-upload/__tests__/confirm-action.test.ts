@@ -1,5 +1,5 @@
 // Tests for confirmResultUpload: covers LAB_ADMIN role gate, ownerId guard,
-// idempotent findUnique-before-create pattern, and revalidatePath call. (ref: DL-002)
+// idempotent updateMany {id, orderId} CAS (count===0 no-op), and revalidatePath call. (ref: DL-002)
 
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
 

@@ -72,6 +72,9 @@ const ALLOWED_PREFIXES = ['labs/', 'orders/'] as const
 type AllowedPrefix = typeof ALLOWED_PREFIXES[number]
 
 function validatePrefix(key: string, allowedPrefix: AllowedPrefix): void {
+  if (!(ALLOWED_PREFIXES as readonly string[]).includes(allowedPrefix)) {
+    throw new R2ValidationError(`Unsupported prefix: ${allowedPrefix}`)
+  }
   if (!key.startsWith(allowedPrefix)) {
     throw new R2ValidationError(`Key must start with '${allowedPrefix}' prefix: ${key}`)
   }
