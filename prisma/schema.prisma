@@ -257,13 +257,19 @@ model ClientProfile {
 }
 
 model Attachment {
+  // r2Key stores the server-trusted Cloudflare R2 object key (e.g. orders/{orderId}/{cuid}.{ext}).
+  // Never store a presigned or public URL here — presigned URLs expire (300s) and public URLs
+  // leak the object indefinitely. Mint presigned GET URLs on demand via generatePresignedGetUrl.
+  // fileUrl is intentionally unused (String?) — r2Key is the authoritative storage reference.
+  // r2Key @unique provides idempotency for confirm-on-create flows. (ref: DL-001)
   id             String         @id @default(cuid())
   orderId        String
   labId          String
   uploadedById   String
   attachmentType AttachmentType
   fileName       String
-  fileUrl        String
+  fileUrl        String?
+  r2Key          String         @unique
   fileSize       Int?
   mimeType       String?
   createdAt      DateTime       @default(now())

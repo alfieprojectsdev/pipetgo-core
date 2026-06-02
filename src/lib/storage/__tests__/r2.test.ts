@@ -1,3 +1,7 @@
+// Tests cover the parameterized prefix guard and per-type size limit for both
+// labs/ (KYC/accreditation) and orders/ (attachment) key namespaces.
+// Each test isolates a specific guard boundary — prefix mismatch, size boundary,
+// MIME rejection — rather than testing the full presign flow end-to-end. (ref: DL-004, DL-005)
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockGetSignedUrl = vi.fn().mockResolvedValue('https://mock-r2.example.com/mock-url')
@@ -74,6 +78,11 @@ describe('r2 storage client', () => {
     expect(MAX_BYTES).toBe(20 * 1024 * 1024)
   })
 
+  it('module exports MAX_RESULT_BYTES as 50 MB', async () => {
+    const { MAX_RESULT_BYTES } = await import('@/lib/storage/r2')
+    expect(MAX_RESULT_BYTES).toBe(50 * 1024 * 1024)
+  })
+
   describe('generatePresignedGetUrl', () => {
     it('returns a presigned GET URL for a labs/-prefixed key', async () => {
       const { generatePresignedGetUrl } = await import('@/lib/storage/r2')
@@ -98,6 +107,50 @@ describe('r2 storage client', () => {
       await generatePresignedGetUrl('labs/L1/doc.pdf')
       const [, , opts] = mockGetSignedUrl.mock.calls[0]
       expect(opts.expiresIn).toBe(300)
+    })
+
+    it('accepts orders/ prefix when allowedPrefix is orders/', async () => {
+      const { generatePresignedGetUrl } = await import('@/lib/storage/r2')
+      await expect(
+        generatePresignedGetUrl('orders/ord-1/doc.pdf', { allowedPrefix: 'orders/' }),
+      ).resolves.toBe('https://mock-r2.example.com/mock-url')
+    })
+
+    it('rejects labs/ key when allowedPrefix is orders/', async () => {
+      const { generatePresignedGetUrl, R2ValidationError } = await import('@/lib/storage/r2')
+      await expect(
+        generatePresignedGetUrl('labs/lab-1/doc.pdf', { allowedPrefix: 'orders/' }),
+      ).rejects.toBeInstanceOf(R2ValidationError)
+    })
+  })
+
+  describe('generatePresignedPutUrl — prefix + size options', () => {
+    it('accepts orders/ prefix key when allowedPrefix is orders/', async () => {
+      const { generatePresignedPutUrl } = await import('@/lib/storage/r2')
+      await expect(
+        generatePresignedPutUrl('orders/ord-1/x.pdf', 'application/pdf', 1024, { allowedPrefix: 'orders/' }),
+      ).resolves.toBe('https://mock-r2.example.com/mock-url')
+    })
+
+    it('rejects labs/ key when allowedPrefix is orders/', async () => {
+      const { generatePresignedPutUrl, R2ValidationError } = await import('@/lib/storage/r2')
+      await expect(
+        generatePresignedPutUrl('labs/lab-1/x.pdf', 'application/pdf', 1024, { allowedPrefix: 'orders/' }),
+      ).rejects.toBeInstanceOf(R2ValidationError)
+    })
+
+    it('accepts file up to MAX_RESULT_BYTES when maxBytes is MAX_RESULT_BYTES', async () => {
+      const { generatePresignedPutUrl, MAX_RESULT_BYTES } = await import('@/lib/storage/r2')
+      await expect(
+        generatePresignedPutUrl('orders/ord-1/result.pdf', 'application/pdf', MAX_RESULT_BYTES, { allowedPrefix: 'orders/', maxBytes: MAX_RESULT_BYTES }),
+      ).resolves.toBe('https://mock-r2.example.com/mock-url')
+    })
+
+    it('rejects file exceeding MAX_RESULT_BYTES', async () => {
+      const { generatePresignedPutUrl, R2ValidationError, MAX_RESULT_BYTES } = await import('@/lib/storage/r2')
+      await expect(
+        generatePresignedPutUrl('orders/ord-1/result.pdf', 'application/pdf', MAX_RESULT_BYTES + 1, { allowedPrefix: 'orders/', maxBytes: MAX_RESULT_BYTES }),
+      ).rejects.toBeInstanceOf(R2ValidationError)
     })
   })
 })

@@ -15,6 +15,8 @@ export default defineConfig({
     environment: 'node',
     setupFiles: [],
     include: [
+      // Every __tests__/ directory must have a corresponding glob entry —
+      // a missing glob silently drops all tests in that directory from the run.
       'src/lib/storage/__tests__/**/*.test.ts',
       'src/features/labs/kyc-upload/__tests__/**/*.test.ts',
       'src/features/labs/accreditation-upload/__tests__/**/*.test.ts',
@@ -23,6 +25,8 @@ export default defineConfig({
       'src/features/admin/accreditation-review/__tests__/**/*.test.ts',
       'src/features/services/browse/__tests__/**/*.test.ts',
       'src/features/orders/create-order/__tests__/**/*.test.ts',
+      'src/features/orders/spec-upload/__tests__/**/*.test.ts',
+      'src/features/orders/result-upload/__tests__/**/*.test.ts',
     ],
   },
 })

@@ -6,7 +6,8 @@ Object storage clients. Separate namespace from `src/lib/payments/` — storage 
 
 | File | What | When to read |
 | ---- | ---- | ------------ |
-| `r2.ts` | Cloudflare R2 presigned PUT and GET URL generation; `R2ConfigError`, `R2ValidationError`, `ALLOWED_MIME_TYPES`, `MAX_BYTES` | Implementing any file upload or admin document-view feature; modifying MIME or size limits |
+| `r2.ts` | Cloudflare R2 presigned PUT and GET URL generation; `R2ConfigError`, `R2ValidationError`, `ALLOWED_MIME_TYPES`, `MAX_BYTES`, `MAX_RESULT_BYTES` | Implementing any file upload or document-view feature; modifying MIME or size limits |
+| `constants.ts` | `ALLOWED_MIME_TYPES` (pdf/jpeg/png), `MAX_BYTES` (20 MB), `MAX_RESULT_BYTES` (50 MB) | Adding a new attachment type or changing size limits |
 | `README.md` | Design decisions — presigned PUT/GET pattern, key shape, TTL rationale, server-trusted key invariant | Understanding why this client is structured this way |
 
 ## Subdirectories
