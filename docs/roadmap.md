@@ -27,10 +27,11 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 - **Lab accreditation verification (T-18, PR #18)** — ISO 17025 / ITA solidary-liability gate (`Lab.isVerified`, distinct from KYC). Only verified labs surface in the marketplace and can receive orders (services/browse read gate + create-order write gate). Admin verify/reject UI shipped. **Requires `npx prisma db push` of the 3 accreditation audit columns per Neon env before the flow runs.**
 
 **What's next (engineering — no longer blocks lab approval):**
-- **T-12 Attachment uploads — plan written, ready to implement.** Client spec documents and lab result PDFs, order-scoped. Plan at `plans/T-12-attachment-uploads.md` (5306 lines, QR-verified): CLIENT uploads SPECIFICATION on order-detail (20 MB), LAB_ADMIN uploads RESULT on lab-fulfilment (50 MB, PDF-only, while IN_PROGRESS). Reuses `src/lib/storage/r2.ts`; adds `Attachment.r2Key` (server-trusted key, on-demand presigned download). **An implementation session is scheduled** — 5 milestones / 3 waves.
+- **T-12 Attachment uploads** — client spec documents (SPECIFICATION, 20 MB) and lab result PDFs (RESULT, 50 MB). Two VSA slices under `src/features/orders/`; `Attachment.r2Key @unique`; `r2.ts` parameterized for `orders/` prefix. Requires `npx prisma db push` per Neon env (adds `r2Key` column + `@unique`; makes `fileUrl` nullable — does NOT drop it). **PR [#19](https://github.com/alfieprojectsdev/pipetgo-core/pull/19) open — awaiting CodeRabbit. Dev DB push applied 2026-06-02.**
 - **T-13b / T-13c** — spun out of T-13: T-13b is read-only admin order/transaction oversight (pull forward only on a real ops need); T-13c is admin role management, deferred until its own privilege-escalation audit.
 
 > Per-environment after pulling T-18: `npx prisma db push` to apply `Lab.accreditationReviewedById`, `accreditationReviewedAt`, `accreditationRejectionReason` — else the verify/reject flow crashes at runtime on the audit fields (not a type error).
+> Per-environment after pulling T-12: `npx prisma db push` to apply `Attachment.r2Key` (adds the column and `@unique` index; makes `fileUrl` nullable — does NOT drop it) — else the spec/result upload actions crash at runtime on the missing column. **Dev `neondb` applied 2026-06-02; CI/prod still owe it.**
 
 **What must happen before first revenue (non-engineering):**
 1. **BIR Form 2303** — business registration certificate; required before issuing official receipts
@@ -45,8 +46,8 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 
 | Stakeholder | Status | Blocker |
 |---|---|---|
-| **CEO** | Platform is feature-complete for MVP. KYC gate live (T-15), admin approval UI shipped (T-13, PR #17), ISO 17025 accreditation gate live (T-18, PR #18). Only remaining engineering item is order attachments (T-12, plan written, implementation scheduled) — not a launch blocker. Remaining blockers are legal, not engineering. | Legal prerequisites above (BIR 2303, NPC registration, Xendit KYB) |
-| **CMO** | Client-facing flows are complete. Labs upload KYC documents and an admin reviews/approves them in-app (T-13); only accredited labs (T-18) are listable. Order attachments — clients attach spec documents, labs deliver result PDFs in-app — is planned next (T-12). | At least one lab completing KYC + admin review |
+| **CEO** | Platform is feature-complete for MVP. KYC gate live (T-15), admin approval UI shipped (T-13, PR #17), ISO 17025 accreditation gate live (T-18, PR #18), order attachments live (T-12, PR #19). All engineering items done. Remaining blockers are legal, not engineering. | Legal prerequisites above (BIR 2303, NPC registration, Xendit KYB) |
+| **CMO** | Client-facing flows are complete. Labs upload KYC documents and an admin reviews/approves them in-app (T-13); only accredited labs (T-18) are listable. Order attachments live (T-12, PR #19) — clients attach spec documents, labs deliver result PDFs in-app. | At least one lab completing KYC + admin review |
 | **CFO** | Commission accounting is built: every order generates a `Payout` record with `grossAmount`, `platformFee`, `netAmount` using `Decimal` (no float errors). BIR compliance (Form 2303, OR issuance) is a legal track, not an engineering track. VAT threshold tracking must start from transaction #1. | BIR 2303 + NPC registration (both non-engineering) |
 
 ---
@@ -171,6 +172,7 @@ Checklist of everything that must be provisioned outside the codebase for the pl
 - [ ] Prisma migrations applied to production DB (`npx prisma migrate deploy`)
 - [ ] **T-13 audit columns applied per-environment** — `prisma/migrations/` is gitignored (DL-011); run `npx prisma db push` on each Neon branch after pulling T-13 (dev/CI branches are push-managed, not `migrate dev` — that would drift/reset). `schema.prisma` is the committed source of truth; missing this step causes a runtime crash on the audit fields, not a type error.
 - [ ] **T-18 accreditation audit columns applied per-environment** — same mechanism: `npx prisma db push` to apply `Lab.accreditationReviewedById`, `accreditationReviewedAt`, `accreditationRejectionReason` after pulling T-18 (PR #18). **Not yet applied to any env as of merge** (DATABASE_URL was unset in the build session) — runtime crash on verify/reject until done.
+- [ ] **T-12 Attachment schema applied per-environment** — `npx prisma db push` to apply `Attachment.r2Key @unique` and make `fileUrl` nullable (NOT dropped) after pulling T-12. Runtime crash on any attachment upload/view until done. Key prefix: `orders/{orderId}/{cuid}.{ext}`. **Dev `neondb` DONE 2026-06-02** (`docs/sessions/2026-06-02_T12-dbpush-dev.sh`, `--accept-data-loss`, table empty); CI/prod still owe it.
 - [ ] **First verified lab bootstrapped** — the marketplace is empty until at least one lab has `isVerified=true`. Preferred path: a LAB_ADMIN uploads an ISO 17025 cert at `/dashboard/lab/accreditation`, then an ADMIN reviews it at `/dashboard/admin/accreditation` and verifies through the UI. This exercises the real CAS path and leaves an audit trail via `accreditationReviewedById`/`At`. Fallback (no cert available): `UPDATE "labs" SET "isVerified" = true, "accreditationReviewedAt" = now() WHERE id = '<lab-id>';`
 - [ ] **First ADMIN user bootstrapped** — `UPDATE "users" SET role = 'ADMIN' WHERE email = '<admin-email>';` on the target Neon branch (DL-008). No in-app promotion path exists.
 - [ ] Connection pooling confirmed (Neon serverless driver or PgBouncer)
@@ -321,7 +323,7 @@ T-09 Commission record on completion       [done — PR #9] [planner]
 └── T-10 Commission settlement webhook     [done — PR #10] [planner]
     └── T-11 Lab wallet dashboard          [done — PR #11]
 
-T-12 Attachment uploads                    [plan written — plans/T-12-attachment-uploads.md] [planner] ← NEXT (impl scheduled)
+T-12 Attachment uploads                    [PR #19 open] [planner]
 T-13 Admin panel — KYC review surface      [done — PR #17] [planner]
 T-13b Admin order oversight (read-only)     [ready — T-13 ✅] [planner]
 T-13c Admin role management                 [deferred — needs privilege-escalation audit] [planner]
@@ -399,7 +401,7 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 
 ### Phase 4 — Post-MVP / compliance (target: 2026-06-08 → 2026-07-06)
 
-4/6 done (T-17 pulled into Phase 3, T-20 merged, T-15 done, T-13 KYC-review done).
+5/6 done (T-17 pulled into Phase 3, T-20 merged, T-15 done, T-13 KYC-review done, T-12 PR #19 open).
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
@@ -407,8 +409,8 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | T-20 RA 10173 privacy compliance | T-05 ✅ | 2 | ✅ done (PR #15) — consent capture, privacy notice, enum-drift fence |
 | T-15 Lab KYC upload | T-02 ✅ | 2 | ✅ done (PR #16) — LabDocument model, KycStatus enum, R2 presigned PUT, checkout gate |
 | T-13 Admin panel — KYC review surface | T-01 ✅ + T-15 ✅ | 1 | ✅ done (PR #17, merged `2e9c8cc`) — ADMIN-gated KYC review queue + approve/reject; deployed to dev + admin bootstrapped (`alfieprojects.dev@gmail.com`); T-13b (role mgmt + order oversight) is follow-up |
-| T-18 Lab accreditation verification | T-02 ✅ + T-13 ✅ | 2 | **Now unblocked (T-13 merged)** — ITA 2023 / ISO 17025; reuses the admin slice + auth patterns; operates `Lab.isVerified` (distinct from `kycStatus`). **Recommended next.** |
-| T-12 Attachment uploads | T-06 ✅ + R2 ✅ | 3 | **Now unblocked** — R2 provisioned (T-15); reuses src/lib/storage/r2.ts (presigned GET added in T-13); client spec + lab result PDFs |
+| T-18 Lab accreditation verification | T-02 ✅ + T-13 ✅ | 2 | ✅ done (PR #18) — ITA 2023 / ISO 17025; `Lab.isVerified` gate; services/browse + create-order write gate. |
+| T-12 Attachment uploads | T-06 ✅ + R2 ✅ | 3 | 🔵 PR #19 open (awaiting CodeRabbit) — SPECIFICATION upload (client, 20 MB) + RESULT upload (lab, 50 MB, PDF-only); presigned PUT/GET; `Attachment.r2Key @unique`; `fileUrl` made nullable (not dropped). `npx prisma db push` — dev done 2026-06-02, CI/prod owed. **50 MB RESULT upload verification: test with a ≥10 MB PDF in the lab-fulfillment page with IN_PROGRESS order before go-live.** **RA 10173 / RA 10173 retention flag: uploaded SPECIFICATION and RESULT documents contain PII (client names, test results) — retention period and deletion process must be defined and documented before first commercial transaction.** |
 | T-13b Admin order oversight (read-only) | T-13 ✅ | 1 | Read-only admin view of all orders/transactions/payouts; clones the T-13 admin read patterns + reuses the route-group guard — no `UserRole` writes. Pull forward only on a concrete ops/support need. |
 | T-13c Admin role management | T-13 ✅ | 2 | **Deferred — privilege-escalation surface.** `UserRole` grant/revoke; needs last-admin + self-demotion invariants, an audit log, and a dedicated security review. Manual-SQL bootstrap (DL-008) stays the only ADMIN-minting path until then. |
 | T-19 Dispute and redress | T-06 ✅ + T-07 ✅ | 2 | ITA 2023 internal redress; schema migration needed (DISPUTED status) |
@@ -422,9 +424,9 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | 1 — Core flows | ✅ **COMPLETE** | 5/5 | |
 | 2 — Transactional | ✅ **COMPLETE** | 5/5 | |
 | 3 — Financial | ✅ **COMPLETE** | 4/4 | ✅ **MVP gate cleared** |
-| 4 — Post-MVP | 5/6 done | 83% | |
+| 4 — Post-MVP | 6/6 done | 100% | |
 
-**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs); T-18 accreditation (ISO 17025) merged (PR #18 — `Lab.isVerified` marketplace gate). **T-12 (attachments) is the last clean Phase-4 engineering ticket — plan written (`plans/T-12-attachment-uploads.md`, QR-verified), implementation session scheduled.** The remaining T-13 scope is split into T-13b (read-only order oversight, pull forward only on real ops need) and T-13c (role management, deferred — privilege-escalation audit). T-19 (dispute/redress) remains blocked on schema migration.
+**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs); T-18 accreditation (ISO 17025) merged (PR #18 — `Lab.isVerified` marketplace gate); T-12 (attachments) PR #19 open, awaiting CodeRabbit (SPECIFICATION + RESULT upload flows). The remaining T-13 scope is split into T-13b (read-only order oversight, pull forward only on real ops need) and T-13c (role management, deferred — privilege-escalation audit). T-19 (dispute/redress) remains blocked on schema migration.
 
 ---
 

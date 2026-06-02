@@ -4,7 +4,10 @@ import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { OrderDetailQuoteActions, OrderDetailRetryPayment, OrderDetailVaInstructions, OrderDetailVaBankSelector } from './ui'
+import { SpecUploadUi, ResultAttachmentListUi } from '../spec-upload/ui'
 import { PESONET_MIN_AMOUNT } from '@/domain/payments/pesonet'
+
+type AttachmentDTO = { id: string; fileName: string; createdAt: string }
 
 // Intentionally duplicated from clients/dashboard/ui.tsx — cross-slice import violates ADR-001.
 // Typed Record<OrderStatus, ...> so a missing enum value is a compile error at build time.
@@ -45,6 +48,16 @@ export type OrderDetailDTO = {
   vaNumber: string | null
   transactionPaymentMethod: string | null
   labKycApproved: boolean
+}
+
+export type OrderDetailWithAttachmentsDTO = OrderDetailDTO & {
+  // specAttachments: SPECIFICATION files uploaded by the CLIENT. Dates serialized
+  // to ISO string at the RSC boundary (never raw Date). (ref: DL-001)
+  // resultAttachments: RESULT PDFs delivered by the lab. The CLIENT is authorized
+  // to download both SPECIFICATION and RESULT attachments of their own order —
+  // ownership is by order (order.clientId === userId), not by attachmentType. (ref: DL-011)
+  specAttachments: AttachmentDTO[]
+  resultAttachments: AttachmentDTO[]
 }
 
 type TimelineStep = {
@@ -193,6 +206,10 @@ export default async function OrderDetailPage({
         orderBy: { createdAt: 'desc' },
         take: 1,
       },
+      attachments: {
+        select: { id: true, fileName: true, createdAt: true, attachmentType: true },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   })
 
@@ -220,6 +237,13 @@ export default async function OrderDetailPage({
     transactionPaymentMethod: order.transactions[0]?.paymentMethod ?? null,
     labKycApproved: order.lab?.kycStatus === KycStatus.APPROVED,
   }
+
+  const specAttachments: AttachmentDTO[] = order.attachments
+    .filter((a) => a.attachmentType === 'SPECIFICATION')
+    .map((a)  => ({ id: a.id, fileName: a.fileName, createdAt: a.createdAt.toISOString() }))
+  const resultAttachments: AttachmentDTO[] = order.attachments
+    .filter((a) => a.attachmentType === 'RESULT')
+    .map((a)  => ({ id: a.id, fileName: a.fileName, createdAt: a.createdAt.toISOString() }))
 
   const badge = statusBadgeConfig[dto.status as OrderStatus] ??
     { label: dto.status, className: 'bg-gray-100 text-gray-500' }
@@ -376,6 +400,28 @@ export default async function OrderDetailPage({
             </ol>
           </CardContent>
         </Card>
+
+        {/* Specification Documents */}
+        <Card className="mt-4">
+          <CardHeader>
+            <CardTitle>Specification Documents</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SpecUploadUi orderId={dto.id} attachments={specAttachments} />
+          </CardContent>
+        </Card>
+
+        {/* Result Documents (read-only for client) */}
+        {resultAttachments.length > 0 && (
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle>Result Documents</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResultAttachmentListUi attachments={resultAttachments} />
+            </CardContent>
+          </Card>
+        )}
 
         {dto.status === 'QUOTE_PROVIDED' && dto.quotedPrice != null && (
           <OrderDetailQuoteActions orderId={dto.id} quotedPrice={dto.quotedPrice} />

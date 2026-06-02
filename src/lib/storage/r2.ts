@@ -1,9 +1,9 @@
 import 'server-only'
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { ALLOWED_MIME_TYPES, MAX_BYTES } from './constants'
+import { ALLOWED_MIME_TYPES, MAX_BYTES, MAX_RESULT_BYTES } from './constants'
 
-export { ALLOWED_MIME_TYPES, MAX_BYTES }
+export { ALLOWED_MIME_TYPES, MAX_BYTES, MAX_RESULT_BYTES }
 
 export class R2ConfigError extends Error {
   constructor(message: string) {
@@ -63,13 +63,34 @@ function validateMime(contentType: string): void {
   }
 }
 
-function validateSize(contentLength: number): void {
+// ALLOWED_PREFIXES enumerates the R2 key namespaces this module is authorized to access.
+// The prefix guard in generatePresignedPutUrl/GetUrl performs a startsWith(allowedPrefix)
+// check where allowedPrefix must be a member of this set — no wildcards or arrays accepted.
+// Adding a new prefix here is intentional; a typo that widens the allowed namespace is a
+// security regression. (ref: DL-004, R-001)
+const ALLOWED_PREFIXES = ['labs/', 'orders/'] as const
+type AllowedPrefix = typeof ALLOWED_PREFIXES[number]
+
+function validatePrefix(key: string, allowedPrefix: AllowedPrefix): void {
+  if (!(ALLOWED_PREFIXES as readonly string[]).includes(allowedPrefix)) {
+    throw new R2ValidationError(`Unsupported prefix: ${allowedPrefix}`)
+  }
+  if (!key.startsWith(allowedPrefix)) {
+    throw new R2ValidationError(`Key must start with '${allowedPrefix}' prefix: ${key}`)
+  }
+}
+
+// validateSize rejects files that exceed maxBytes or carry an invalid/zero size.
+// The caller supplies maxBytes (MAX_BYTES for SPECIFICATION/KYC, MAX_RESULT_BYTES for RESULT)
+// so the guard enforces the per-type limit at the storage layer — consistent with the
+// action-level check. (ref: DL-005, R-004)
+function validateSize(contentLength: number, maxBytes: number): void {
   if (!Number.isFinite(contentLength) || contentLength <= 0) {
     throw new R2ValidationError(`Invalid file size: ${contentLength}`)
   }
-  if (contentLength > MAX_BYTES) {
+  if (contentLength > maxBytes) {
     throw new R2ValidationError(
-      `File size ${contentLength} exceeds maximum ${MAX_BYTES} bytes (20 MB)`,
+      `File size ${contentLength} exceeds maximum ${maxBytes} bytes`,
     )
   }
 }
@@ -78,12 +99,12 @@ export async function generatePresignedPutUrl(
   key: string,
   contentType: string,
   contentLength: number,
+  options?: { allowedPrefix?: AllowedPrefix; maxBytes?: number },
 ): Promise<string> {
-  if (!key.startsWith('labs/')) {
-    throw new R2ValidationError(`Key must start with 'labs/' prefix: ${key}`)
-  }
+  const allowedPrefix: AllowedPrefix = options?.allowedPrefix ?? 'labs/'
+  validatePrefix(key, allowedPrefix)
   validateMime(contentType)
-  validateSize(contentLength)
+  validateSize(contentLength, options?.maxBytes ?? MAX_BYTES)
 
   const config = getR2Config()
   const client = buildS3Client(config)
@@ -102,17 +123,16 @@ export async function generatePresignedPutUrl(
 
 /**
  * Mints a 300s presigned GET URL for an R2 object.
- * Key must start with 'labs/' — throws R2ValidationError otherwise (defense-in-depth
- * against arbitrary-key requests, reusing the same prefix guard as the PUT path).
- * Call from a Server Action only; the key must be loaded from a stored LabDocument.r2Key,
- * never from client input. (ref: DL-004)
+ * Key must start with the given allowedPrefix — throws R2ValidationError otherwise.
+ * Call from a Server Action only; the key must be loaded from a stored row (LabDocument.r2Key
+ * or Attachment.r2Key), never from client input. (ref: DL-004, DL-010)
  */
 export async function generatePresignedGetUrl(
   key: string,
+  options?: { allowedPrefix?: AllowedPrefix },
 ): Promise<string> {
-  if (!key.startsWith('labs/')) {
-    throw new R2ValidationError(`Key must start with 'labs/' prefix: ${key}`)
-  }
+  const allowedPrefix: AllowedPrefix = options?.allowedPrefix ?? 'labs/'
+  validatePrefix(key, allowedPrefix)
 
   const config = getR2Config()
   const client = buildS3Client(config)

@@ -18,6 +18,7 @@ import { OrderStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { auth } from '@/lib/auth'
 import { LabFulfillmentUI } from './ui'
+import { ResultUploadUi, SpecAttachmentListUi } from '../result-upload/ui'
 
 /**
  * All fields are primitive strings so Next.js can serialize them across the
@@ -32,6 +33,12 @@ export type LabOrderDTO = {
   clientName: string
   clientEmail: string
   createdAt: string
+  // specAttachments: SPECIFICATION files the CLIENT attached to this order,
+  // filtered at the DTO level so ResultUploadUi receives only the relevant subset.
+  // resultAttachments: RESULT PDFs uploaded by this lab for the order.
+  // Both lists serialize Date→toISOString at the RSC boundary. (ref: DL-001)
+  specAttachments: { id: string; fileName: string; createdAt: string }[]
+  resultAttachments: { id: string; fileName: string; createdAt: string }[]
 }
 
 export default async function LabFulfillmentPage({
@@ -64,6 +71,20 @@ export default async function LabFulfillmentPage({
   }
   if (!order.clientProfile) notFound()
 
+  const allAttachments = await prisma.attachment.findMany({
+    where:   { orderId: params.orderId },
+    select:  { id: true, fileName: true, createdAt: true, attachmentType: true },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  const specAttachments = allAttachments
+    .filter((a) => a.attachmentType === 'SPECIFICATION')
+    .map((a) => ({ id: a.id, fileName: a.fileName, createdAt: a.createdAt.toISOString() }))
+
+  const resultAttachments = allAttachments
+    .filter((a) => a.attachmentType === 'RESULT')
+    .map((a) => ({ id: a.id, fileName: a.fileName, createdAt: a.createdAt.toISOString() }))
+
   const dto: LabOrderDTO = {
     id: order.id,
     serviceName: order.service.name,
@@ -73,7 +94,23 @@ export default async function LabFulfillmentPage({
     clientName: order.clientProfile.name,
     clientEmail: order.clientProfile.email,
     createdAt: order.createdAt.toISOString(),
+    specAttachments,
+    resultAttachments,
   }
 
-  return <LabFulfillmentUI order={dto} />
+  return (
+    <div className="space-y-6">
+      <LabFulfillmentUI order={dto} />
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Specification Documents</h2>
+          <SpecAttachmentListUi attachments={specAttachments} />
+        </div>
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Result Documents</h2>
+          <ResultUploadUi orderId={params.orderId} attachments={resultAttachments} />
+        </div>
+      </div>
+    </div>
+  )
 }
