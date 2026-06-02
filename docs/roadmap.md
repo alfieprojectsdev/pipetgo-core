@@ -31,7 +31,6 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 - **T-13b / T-13c** — spun out of T-13: T-13b is read-only admin order/transaction oversight (pull forward only on a real ops need); T-13c is admin role management, deferred until its own privilege-escalation audit.
 
 > Per-environment after pulling T-18: `npx prisma db push` to apply `Lab.accreditationReviewedById`, `accreditationReviewedAt`, `accreditationRejectionReason` — else the verify/reject flow crashes at runtime on the audit fields (not a type error).
-
 > Per-environment after pulling T-12: `npx prisma db push` to apply `Attachment.r2Key` (adds the column and `@unique` index; makes `fileUrl` nullable — does NOT drop it) — else the spec/result upload actions crash at runtime on the missing column. **Dev `neondb` applied 2026-06-02; CI/prod still owe it.**
 
 **What must happen before first revenue (non-engineering):**
