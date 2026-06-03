@@ -30,7 +30,7 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 **What's next (engineering — no longer blocks lab approval):**
 - **T-13b Admin order oversight (read-only)** — ✅ **done (PR #20, merged `9db480a`).** ADMIN-gated read-only views of all orders + transactions + payouts across the platform (no mutations). Reuses the `/dashboard/admin/*` layout guard and the two-layer admin auth pattern from T-13. Cursor pagination + on-demand attachment download. No schema change → no `db push` owed.
 - **T-13c admin role management** — deferred until its own privilege-escalation audit (grant/revoke `UserRole` is the dangerous surface T-13b deliberately excludes).
-- **T-19 Dispute and redress mechanism** — **next up.** ITA 2023 internal redress; needs a schema migration (`DISPUTED` order status + a dispute model). `[planner]` — requires an explore → plan → /clear → execute cycle before implementation. Deps T-06 ✅ + T-07 ✅ met; the "schema migration" is part of the ticket's own scope.
+- **T-19 Dispute and redress mechanism** — **plan written + QR-verified, ready to implement.** ITA 2023 internal redress; `DISPUTED` order status + `OrderDispute` model (14-day window, admin resolution either direction, payout held while DISPUTED). Schema migration → `npx prisma db push` owed per env. `[planner]` — `/clear` then run the executor next. Plan: `plans/T-19-dispute-redress.md`; playbook: `docs/sessions/2026-06-03_T-19-playbook.md`; session: `docs/sessions/2026-06-03-T19-planning-done.md`.
 
 > Per-environment after pulling T-18: `npx prisma db push` to apply `Lab.accreditationReviewedById`, `accreditationReviewedAt`, `accreditationRejectionReason` — else the verify/reject flow crashes at runtime on the audit fields (not a type error).
 > Per-environment after pulling T-12: `npx prisma db push` to apply `Attachment.r2Key` (adds the column and `@unique` index; makes `fileUrl` nullable — does NOT drop it) — else the spec/result upload actions crash at runtime on the missing column. **Dev `neondb` applied 2026-06-02; CI/prod still owe it.**
@@ -341,7 +341,7 @@ T-17 PESONet virtual account integration  [done — PR #14] [planner]
 ── Phase 3 regulatory ──────────────────────────────────────────────────────
 T-18 Lab accreditation verification       [done — PR #18] [planner]
     (ISO 17025 / ITA solidary liability; db push of audit columns still owed per env)
-T-19 Dispute and redress mechanism        [ready — next; T-06 ✅ T-07 ✅] [planner]
+T-19 Dispute and redress mechanism        [plan written, ready to implement; T-06 ✅ T-07 ✅] [planner]
     (ITA 2023 internal redress requirement; DISPUTED status schema migration is in-scope)
 T-20 RA 10173 privacy compliance          [done — PR #15] [planner]
 ```
@@ -403,7 +403,7 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 
 ### Phase 4 — Post-MVP / compliance (target: 2026-06-08 → 2026-07-06)
 
-6/6 done (T-17 pulled into Phase 3, T-20 merged, T-15 done, T-13 KYC-review done, T-18 merged, T-12 merged PR #19). Spun-out follow-ons: T-13b ✅ done (PR #20), T-13c deferred (privilege-escalation audit), **T-19 ready — next up**.
+6/6 done (T-17 pulled into Phase 3, T-20 merged, T-15 done, T-13 KYC-review done, T-18 merged, T-12 merged PR #19). Spun-out follow-ons: T-13b ✅ done (PR #20), T-13c deferred (privilege-escalation audit), **T-19 plan written + QR-verified, ready to implement**.
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
@@ -428,7 +428,7 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | 3 — Financial | ✅ **COMPLETE** | 4/4 | ✅ **MVP gate cleared** |
 | 4 — Post-MVP | 6/6 done | 100% | |
 
-**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs); T-18 accreditation (ISO 17025) merged (PR #18 — `Lab.isVerified` marketplace gate); T-12 (attachments) merged (PR #19 — SPECIFICATION + RESULT upload flows). The remaining T-13 scope is split into **T-13b (read-only order oversight — ✅ done, PR #20)** and T-13c (role management, deferred — privilege-escalation audit). **T-19 (dispute/redress) is now ready and queued next.**
+**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs); T-18 accreditation (ISO 17025) merged (PR #18 — `Lab.isVerified` marketplace gate); T-12 (attachments) merged (PR #19 — SPECIFICATION + RESULT upload flows). The remaining T-13 scope is split into **T-13b (read-only order oversight — ✅ done, PR #20)** and T-13c (role management, deferred — privilege-escalation audit). **T-19 (dispute/redress) plan is written + QR-verified; ready to implement (executor next).**
 
 ---
 
@@ -846,7 +846,7 @@ by default; only ADMIN can set it to `true` after reviewing submitted documents.
 
 ### T-19 — Dispute and redress mechanism `[planner]`
 **Branch:** `feat/T19-dispute-redress`
-**Status:** ready — next up (T-06 ✅, T-07 ✅); `DISPUTED` schema migration is in-scope, not a blocker
+**Status:** plan written + QR-verified, ready to implement (T-06 ✅, T-07 ✅); `DISPUTED` schema migration is in-scope, not a blocker. Plan: `plans/T-19-dispute-redress.md` · Playbook: `docs/sessions/2026-06-03_T-19-playbook.md` · Session: `docs/sessions/2026-06-03-T19-planning-done.md`
 **Why planner:** The Internet Transactions Act (ITA) of 2023 requires an internal redress mechanism. This ticket adds a `DISPUTED` order status (schema migration), the state machine transitions into and out of it, a dispute initiation slice for the client, an admin resolution slice, and the fund-holding logic that prevents lab payout release while a dispute is open. Multiple actors, multiple transitions, financial hold semantics.
 
 **Schema migration required:** add `DISPUTED` to `OrderStatus` enum.
