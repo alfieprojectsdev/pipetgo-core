@@ -179,6 +179,26 @@ Checklist of everything that must be provisioned outside the codebase for the pl
 - [ ] **First ADMIN user bootstrapped** — `UPDATE "users" SET role = 'ADMIN' WHERE email = '<admin-email>';` on the target Neon branch (DL-008). No in-app promotion path exists.
 - [ ] Connection pooling confirmed (Neon serverless driver or PgBouncer)
 
+### Local development & testing (offline)
+
+The vitest suite (unit + real-DB integration) runs fully offline against a local Postgres
+container — no Neon dev branch reachable from the dev machine is required.
+
+- [x] **Local test DB via `scripts/test-local.sh`** (added 2026-06-04) — provisions a
+  `postgres:16-alpine` container (`pipetgo-test-db`, host port **5433**, since dev Postgres
+  typically holds 5432), points `DATABASE_TEST_URL` at it, regenerates the Prisma client and
+  `db push`es the schema for the current checkout, then runs vitest. One command; idempotent.
+- [x] **vitest config hardened for offline/RSC tests** (added 2026-06-04) — `esbuild.jsx:
+  'automatic'` (fixes "React is not defined" in component renders) and a `server-only` alias
+  to a no-op stub (makes `src/lib/storage/r2.ts` and its importers loadable under node).
+- [x] **`wt/` worktree test reliability** — `scripts/test-local.sh` re-syncs the shared
+  generated Prisma client + the single test DB schema to the current branch, avoiding
+  cross-branch drift (see `docs/devops-discipline.md` and `src/test/CLAUDE.md`).
+- No R2/S3 service needed locally — storage tests mock the `@aws-sdk/client-s3` boundary; do
+  not set `R2_*` in `.env.test`. A live MinIO/S3 is only for manual end-to-end upload testing.
+- Resource note (ThinkPad T420, i5-2540M 2c/4t, 16 GiB): container idles ~80 MB; CPU is the
+  bottleneck (full suite ~80 s). `docker stop pipetgo-test-db` to free the port when idle.
+
 ### Authentication — Google OAuth
 
 - [ ] Google Cloud Console project created
@@ -245,7 +265,7 @@ Provider decided: **Cloudflare R2** (zero egress cost, S3-compatible API, Philip
 ### CI / Automated Checks
 
 - [ ] GitHub Actions workflow: runs `npx tsc --noEmit` + `npx eslint src/` on every PR
-- [ ] `DATABASE_TEST_URL` added to GitHub repo secrets (for Vitest integration tests against Neon dev branch in CI)
+- [ ] `DATABASE_TEST_URL` added to GitHub repo secrets (for Vitest integration tests against Neon dev branch in CI) — **or** use a `postgres:16-alpine` service container in the workflow (mirrors the local `scripts/test-local.sh` setup; no Neon dependency, ephemeral per run, sidesteps the cross-branch DB-schema drift that a shared Neon branch suffers)
 - [ ] Vitest integration test step added to CI workflow (`npm test -- --run`)
 - [ ] CI status check required before merge (branch protection rule on `main`)
 

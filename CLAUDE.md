@@ -28,7 +28,12 @@ Next.js lab testing marketplace. VSA + minimal domain kernel (see `README.md`).
 ```bash
 npm install && npx prisma generate
 npx tsc --noEmit && npx eslint src/domain/
+./scripts/test-local.sh   # vitest against a local Postgres container (offline; see src/test/CLAUDE.md)
 ```
+
+Tests run offline against a local `postgres:16-alpine` container, not the cloud DB —
+`scripts/test-local.sh` provisions it and re-syncs the Prisma client + DB schema to the
+current checkout. Read `src/test/CLAUDE.md` for the harness and the worktree gotchas.
 
 ## PR Workflow
 

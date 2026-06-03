@@ -123,3 +123,26 @@ migrations:
 ```bash
 npx prisma migrate dev
 ```
+
+## Testing
+
+The test suite is real-DB integration plus unit tests. It does **not** need the cloud
+database — provision a local Postgres container and run everything offline:
+
+```bash
+./scripts/test-local.sh                 # full suite against a local Postgres container
+./scripts/test-local.sh src/lib/...     # only matching files
+```
+
+`scripts/test-local.sh` is idempotent: it creates/starts the `pipetgo-test-db`
+container (`postgres:16-alpine`, host port 5433), re-syncs the generated Prisma client
+**and** the DB schema to the current checkout's `prisma/schema.prisma`, then runs vitest.
+The re-sync is what makes per-branch `wt/` worktrees safe — without it a worktree would
+inherit a stale generated client or a DB schema from another branch.
+
+`.env.test` must hold `DATABASE_TEST_URL` (the script writes a local default if absent).
+No R2/S3 credentials are needed: storage tests mock the `@aws-sdk/client-s3` boundary.
+
+Stop the container to free the port when done (`docker stop pipetgo-test-db`); its data
+is disposable. See `docs/devops-discipline.md` for the local-provisioning gotchas this
+script encodes (worktree client/DB drift, `server-only` under vitest, JSX runtime).
