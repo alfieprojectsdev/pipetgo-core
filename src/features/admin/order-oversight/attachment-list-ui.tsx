@@ -19,16 +19,24 @@ export function AttachmentListUi({ attachments }: { attachments: AttachmentItem[
   async function handleView(id: string) {
     setErrors((prev) => ({ ...prev, [id]: '' }))
     const win = window.open('', '_blank')
-    const result = await viewOrderAttachment(id)
-    if ('url' in result) {
-      if (win) {
-        win.location.href = result.url
+    try {
+      const result = await viewOrderAttachment(id)
+      if ('url' in result) {
+        if (win) {
+          win.location.href = result.url
+        } else {
+          window.location.href = result.url
+        }
       } else {
-        window.location.href = result.url
+        win?.close()
+        setErrors((prev) => ({ ...prev, [id]: result.message ?? 'Unable to retrieve file.' }))
       }
-    } else {
+    } catch {
+      // A thrown Server Action (e.g. network failure) would otherwise leave the
+      // placeholder tab open and drop the rejection unhandled. (Implementation
+      // Discipline — surface every failure branch)
       win?.close()
-      setErrors((prev) => ({ ...prev, [id]: result.message ?? 'Unable to retrieve file.' }))
+      setErrors((prev) => ({ ...prev, [id]: 'Unable to retrieve file.' }))
     }
   }
 

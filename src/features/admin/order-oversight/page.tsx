@@ -34,15 +34,19 @@ export type AdminOrderListProps = {
 export default async function AdminOrderListPage({
   searchParams,
 }: {
-  searchParams: { cursor?: string; dir?: string }
+  searchParams: { cursor?: string | string[]; dir?: string | string[] }
 }) {
   const session = await auth()
   if (!session || !session.user.id || session.user.role !== 'ADMIN') {
     redirect('/auth/signin')
   }
 
-  const cursor = searchParams.cursor
-  const dir = searchParams.dir
+  // searchParams values are `string | string[]` at runtime — narrow to a single
+  // string before building the Prisma cursor; a repeated/array param drops to
+  // undefined (forward, no cursor) rather than corrupting the query. Any dir
+  // other than 'prev' is the documented forward default. (ref: DL-003)
+  const cursor = typeof searchParams.cursor === 'string' ? searchParams.cursor : undefined
+  const dir = typeof searchParams.dir === 'string' ? searchParams.dir : undefined
 
   // Backward traversal requires reversing orderBy so Prisma's cursor walks
   // in the opposite direction from the cursor, then the result is reversed

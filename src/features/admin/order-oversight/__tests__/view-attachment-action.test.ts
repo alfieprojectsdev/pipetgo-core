@@ -76,4 +76,30 @@ describe('viewOrderAttachment (admin)', () => {
     )
     expect(result).toEqual({ url: 'https://r2.example.com/signed' })
   })
+
+  it('returns Unable to retrieve when the Prisma lookup throws — no presign', async () => {
+    mockAuth.mockResolvedValue(ADMIN_SESSION)
+    mocks.attachmentFindUnique.mockRejectedValue(new Error('prisma-fail'))
+    const result = await viewOrderAttachment('att-1')
+    expect(result).toEqual({ message: 'Unable to retrieve attachment.' })
+    expect(mocks.generatePresignedGetUrl).not.toHaveBeenCalled()
+  })
+
+  it('returns Unable to retrieve when presign throws — lookup args still correct', async () => {
+    mockAuth.mockResolvedValue(ADMIN_SESSION)
+    mocks.attachmentFindUnique.mockResolvedValue({ r2Key: 'orders/ord-1/file.pdf' })
+    mocks.generatePresignedGetUrl.mockRejectedValue(new Error('presign-fail'))
+
+    const result = await viewOrderAttachment('att-1')
+
+    expect(mocks.attachmentFindUnique).toHaveBeenCalledWith({
+      where: { id: 'att-1' },
+      select: { r2Key: true },
+    })
+    expect(mocks.generatePresignedGetUrl).toHaveBeenCalledWith(
+      'orders/ord-1/file.pdf',
+      { allowedPrefix: 'orders/' },
+    )
+    expect(result).toEqual({ message: 'Unable to retrieve attachment.' })
+  })
 })

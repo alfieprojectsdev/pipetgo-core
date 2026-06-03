@@ -24,7 +24,7 @@ export async function viewOrderAttachment(
       where: { id: attachmentId },
       select: { r2Key: true },
     })
-  } catch (e) {
+  } catch {
     return { message: 'Unable to retrieve attachment.' }
   }
 
@@ -35,7 +35,7 @@ export async function viewOrderAttachment(
   let url: string
   try {
     url = await generatePresignedGetUrl(doc.r2Key, { allowedPrefix: 'orders/' })
-  } catch (e) {
+  } catch {
     return { message: 'Unable to retrieve attachment.' }
   }
 

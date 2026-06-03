@@ -112,14 +112,24 @@ describe('AdminOrderDetailPage', () => {
     )
     const jsx = await AdminOrderDetailPage({ params: { orderId: 'order-1' } })
     const dto = jsx.props.dto as Record<string, unknown>
-    expect(typeof dto.quotedPrice).toBe('string')
-    expect(typeof dto.createdAt).toBe('string')
+    // Assert exact serialized values — the boundary contract is fixed precision
+    // (.toFixed(2)/.toFixed(4)) and ISO-8601, not merely "some string".
+    expect(dto.quotedPrice).toBe('200.00')
+    expect(dto.quotedAt).toBe('2024-02-01T00:00:00.000Z')
+    expect(dto.paidAt).toBe('2024-02-02T00:00:00.000Z')
+    expect(dto.createdAt).toBe('2024-01-01T00:00:00.000Z')
+    expect(dto.updatedAt).toBe('2024-01-02T00:00:00.000Z')
     const txn = (dto.transactions as Array<Record<string, unknown>>)[0]
-    expect(typeof txn.amount).toBe('string')
-    expect(typeof txn.capturedAt).toBe('string')
+    expect(txn.amount).toBe('200.00')
+    expect(txn.capturedAt).toBe('2024-02-02T00:00:00.000Z')
+    expect(txn.createdAt).toBe('2024-02-01T00:00:00.000Z')
     const payout = (dto.payouts as Array<Record<string, unknown>>)[0]
-    expect(typeof payout.grossAmount).toBe('string')
-    expect(typeof payout.netAmount).toBe('string')
-    expect(typeof payout.completedAt).toBe('string')
+    expect(payout.grossAmount).toBe('190.00')
+    expect(payout.platformFee).toBe('19.00')
+    expect(payout.netAmount).toBe('171.00')
+    expect(payout.feePercentage).toBe('0.1000')
+    expect(payout.scheduledDate).toBeNull()
+    expect(payout.completedAt).toBe('2024-02-10T00:00:00.000Z')
+    expect(payout.createdAt).toBe('2024-02-03T00:00:00.000Z')
   })
 })
