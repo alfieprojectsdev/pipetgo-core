@@ -47,6 +47,8 @@ async function cleanup() {
           `xendit:settlement:COMPLETED:${EXT_SETTLE_1}`,
           `xendit:settlement:COMPLETED:${EXT_SETTLE_DUP}`,
           `xendit:settlement:COMPLETED:${EXT_SETTLE_KEY_CREATE}`,
+          `xendit:settlement:COMPLETED:${EXT_SETTLE_5}`,
+          `xendit:settlement:COMPLETED:${EXT_SETTLE_DISPUTED}`,
         ],
       },
     },

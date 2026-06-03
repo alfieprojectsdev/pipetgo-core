@@ -10,11 +10,16 @@ import { Decimal } from '@prisma/client/runtime/library'
 import { testPrisma } from '@/test/test-prisma'
 import { completeOrder } from '../action'
 
+// vi.hoisted so the mock fn exists before the hoisted vi.mock factory runs; the
+// resolved session is set in beforeEach where the test-id consts are in scope.
+const mockAuth = vi.hoisted(() => vi.fn())
+
 vi.mock('@/lib/prisma', async () => {
   const { testPrisma: client } = await import('@/test/test-prisma')
   return { prisma: client }
 })
 
+vi.mock('@/lib/auth', () => ({ auth: mockAuth }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }))
 
@@ -66,13 +71,11 @@ async function seedBase() {
   })
 }
 
-vi.mock('@/lib/auth', () => ({
-  auth: vi.fn().mockResolvedValue({
-    user: { id: TEST_USER_LAB_ID, role: 'LAB_ADMIN' },
-  }),
-}))
-
 beforeEach(async () => {
+  mockAuth.mockResolvedValue({
+    user: { id: TEST_USER_LAB_ID, role: 'LAB_ADMIN' },
+    expires: '2099-01-01',
+  })
   await cleanup()
   await seedBase()
 })
