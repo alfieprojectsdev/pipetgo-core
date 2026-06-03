@@ -28,7 +28,7 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 - **Attachment uploads (T-12, PR #19)** — client spec documents (SPECIFICATION, 20 MB) and lab result PDFs (RESULT, 50 MB). Two VSA slices under `src/features/orders/`; `Attachment.r2Key @unique`; `r2.ts` parameterized for `orders/` prefix. **Merged `9fd5422`. Dev DB push applied 2026-06-02; CI/prod still owe `npx prisma db push` (adds `r2Key` + `@unique`; makes `fileUrl` nullable — does NOT drop it).**
 
 **What's next (engineering — no longer blocks lab approval):**
-- **T-13b Admin order oversight (read-only)** — queued next. ADMIN-gated read-only views of all orders + transactions + payouts across the platform (no mutations). Reuses the `/dashboard/admin/*` layout guard and the two-layer admin auth pattern from T-13. No schema change. Playbook: `docs/sessions/2026-06-03_T-13b-playbook.md`.
+- **T-13b Admin order oversight (read-only)** — **plan written + QR-verified, ready to implement.** ADMIN-gated read-only views of all orders + transactions + payouts across the platform (no mutations). Reuses the `/dashboard/admin/*` layout guard and the two-layer admin auth pattern from T-13. Cursor pagination + on-demand attachment download. No schema change → no `db push` owed. Plan: `plans/T-13b-admin-order-oversight.md`; playbook: `docs/sessions/2026-06-03_T-13b-playbook.md`.
 - **T-13c admin role management** — deferred until its own privilege-escalation audit (grant/revoke `UserRole` is the dangerous surface T-13b deliberately excludes).
 - **T-19 Dispute and redress mechanism** — ITA 2023 internal redress; needs a schema migration (`DISPUTED` order status + a dispute model). Regulatory follow-on after T-13b.
 
@@ -327,7 +327,7 @@ T-09 Commission record on completion       [done — PR #9] [planner]
 
 T-12 Attachment uploads                    [done — PR #19] [planner]
 T-13 Admin panel — KYC review surface      [done — PR #17] [planner]
-T-13b Admin order oversight (read-only)     [queued — next; T-13 ✅] [planner]
+T-13b Admin order oversight (read-only)     [plan written, ready to implement; T-13 ✅] [planner]
 T-13c Admin role management                 [deferred — needs privilege-escalation audit] [planner]
 <!-- T-13 shipped KYC-review only. T-13b = read-only order/transaction oversight; T-13c = UserRole grant/revoke, deferred until its own security audit. -->
 
