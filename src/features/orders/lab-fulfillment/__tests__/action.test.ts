@@ -24,16 +24,17 @@ const TEST_LAB_ID = 'test-lf-lab-1'
 const TEST_SERVICE_ID = 'test-lf-svc-1'
 const TEST_ORDER_ID_1 = 'test-lf-order-1'
 const TEST_ORDER_ID_2 = 'test-lf-order-2'
+const TEST_ORDER_ID_3 = 'test-lf-order-3'
 const TEST_TX_ID_1 = 'test-lf-tx-1'
 const TEST_TX_ID_2 = 'test-lf-tx-2'
 const TEST_TX_EXT_1 = 'xendit-lf-ext-1'
 const TEST_TX_EXT_2 = 'xendit-lf-ext-2'
 
 async function cleanup() {
-  await testPrisma.payout.deleteMany({ where: { orderId: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2] } } })
+  await testPrisma.payout.deleteMany({ where: { orderId: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2, TEST_ORDER_ID_3] } } })
   await testPrisma.labWallet.deleteMany({ where: { labId: TEST_LAB_ID } })
   await testPrisma.transaction.deleteMany({ where: { id: { in: [TEST_TX_ID_1, TEST_TX_ID_2] } } })
-  await testPrisma.order.deleteMany({ where: { id: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2] } } })
+  await testPrisma.order.deleteMany({ where: { id: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2, TEST_ORDER_ID_3] } } })
   await testPrisma.labService.deleteMany({ where: { id: TEST_SERVICE_ID } })
   await testPrisma.lab.deleteMany({ where: { id: TEST_LAB_ID } })
   await testPrisma.user.deleteMany({ where: { id: { in: [TEST_USER_CLIENT_ID, TEST_USER_LAB_ID] } } })
@@ -161,5 +162,37 @@ describe('completeOrder — Payout and LabWallet writes', () => {
 
     const wallet = await testPrisma.labWallet.findUnique({ where: { labId: TEST_LAB_ID } })
     expect(wallet!.pendingBalance.toFixed(2)).toBe(fee.add(fee).toFixed(2))
+  })
+})
+
+describe('completeOrder — write-once completedAt anchor (R-003)', () => {
+  it('is rejected by isValidStatusTransition and does NOT rewrite completedAt on a re-entrant call to an already-COMPLETED order', async () => {
+    // Seed an order that is already COMPLETED with a fixed completedAt to simulate a
+    // previous completeOrder call. We bypass completeOrder to set the initial state
+    // directly so completedAt is a known reference value.
+    const originalCompletedAt = new Date('2026-01-01T00:00:00.000Z')
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_3,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.COMPLETED,
+        quantity: 1,
+        completedAt: originalCompletedAt,
+      },
+    })
+
+    const formData = new FormData()
+    formData.set('orderId', TEST_ORDER_ID_3)
+
+    // Second completeOrder call on an already-COMPLETED order must be rejected.
+    const result = await completeOrder(null, formData)
+    expect(result).not.toBeNull()
+    expect(result!.message).toMatch(/cannot be transitioned to COMPLETED/i)
+
+    // completedAt must remain unchanged — the write-once anchor is intact.
+    const order = await testPrisma.order.findUnique({ where: { id: TEST_ORDER_ID_3 } })
+    expect(order!.completedAt).toEqual(originalCompletedAt)
   })
 })

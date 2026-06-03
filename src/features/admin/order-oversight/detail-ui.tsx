@@ -17,6 +17,8 @@ const ORDER_STATUS_BADGE = {
   ACKNOWLEDGED:     { label: 'Acknowledged',     className: 'bg-indigo-100 text-indigo-700' },
   IN_PROGRESS:      { label: 'In progress',      className: 'bg-purple-100 text-purple-700' },
   COMPLETED:        { label: 'Completed',        className: 'bg-green-200 text-green-800' },
+  // amber-200: visual distinction from adjacent COMPLETED (green-200) and REFUND_PENDING (orange-100) (ref: DL-008).
+  DISPUTED:         { label: 'Disputed',         className: 'bg-amber-200 text-amber-800' },
   CANCELLED:        { label: 'Cancelled',        className: 'bg-gray-300 text-gray-600' },
   REFUND_PENDING:   { label: 'Refund pending',   className: 'bg-orange-100 text-orange-700' },
   REFUNDED:         { label: 'Refunded',         className: 'bg-orange-200 text-orange-800' },

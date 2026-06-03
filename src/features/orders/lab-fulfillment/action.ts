@@ -37,7 +37,8 @@ export async function startProcessing(
   _prevState: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const orderId = formData.get('orderId') as string | null
+  const orderIdValue = formData.get('orderId')
+  const orderId = typeof orderIdValue === 'string' ? orderIdValue : null
   if (!orderId) return { message: 'Missing order ID.' }
 
   const session = await auth()
@@ -84,7 +85,8 @@ export async function completeOrder(
   _prevState: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const orderId = formData.get('orderId') as string | null
+  const orderIdValue = formData.get('orderId')
+  const orderId = typeof orderIdValue === 'string' ? orderIdValue : null
   if (!orderId) return { message: 'Missing order ID.' }
 
   const session = await auth()
@@ -92,7 +94,8 @@ export async function completeOrder(
     return { message: 'Unauthorized.' }
   }
 
-  const notes = (formData.get('notes') as string | null)?.trim() || null
+  const notesValue = formData.get('notes')
+  const notes = typeof notesValue === 'string' ? notesValue.trim() || null : null
 
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
@@ -111,6 +114,9 @@ export async function completeOrder(
       where: { id: orderId },
       data: {
         status: OrderStatus.COMPLETED,
+        // Write-once anchor for the 14-day dispute window; must be set here
+        // and never overwritten because isWithinDisputeWindow keys off this value (ref: DL-001, R-003).
+        completedAt: new Date(),
         ...(notes != null ? { notes } : {}),
       },
     })

@@ -35,6 +35,9 @@ const EXT_SETTLE_2 = 'ext-settle-2'
 const EXT_SETTLE_5 = 'ext-settle-5'
 const EXT_SETTLE_DUP = 'ext-settle-dup'
 const EXT_SETTLE_KEY_CREATE = 'ext-settle-key-create'
+const TEST_ORDER_ID_DISPUTED = 'test-settle-order-disputed'
+const TEST_PAYOUT_ID_DISPUTED = 'test-settle-payout-disputed'
+const EXT_SETTLE_DISPUTED = 'ext-settle-disputed'
 
 async function cleanup() {
   await testPrisma.idempotencyKey.deleteMany({
@@ -59,13 +62,15 @@ async function cleanup() {
           TEST_PAYOUT_ID_5,
           TEST_PAYOUT_ID_6,
           TEST_PAYOUT_ID_7,
+          TEST_PAYOUT_ID_DISPUTED,
         ],
       },
     },
   })
+  await testPrisma.orderDispute.deleteMany({ where: { orderId: TEST_ORDER_ID_DISPUTED } })
   await testPrisma.labWallet.deleteMany({ where: { labId: TEST_LAB_ID } })
   await testPrisma.transaction.deleteMany({ where: { id: TEST_TX_ID_1 } })
-  await testPrisma.order.deleteMany({ where: { id: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2] } } })
+  await testPrisma.order.deleteMany({ where: { id: { in: [TEST_ORDER_ID_1, TEST_ORDER_ID_2, TEST_ORDER_ID_DISPUTED] } } })
   await testPrisma.labService.deleteMany({ where: { id: TEST_SERVICE_ID } })
   await testPrisma.lab.deleteMany({ where: { id: TEST_LAB_ID } })
   await testPrisma.user.deleteMany({ where: { id: { in: [TEST_USER_CLIENT_ID, TEST_USER_LAB_ID] } } })
@@ -320,6 +325,100 @@ describe('processSettlement', () => {
       where: { key: `xendit:settlement:COMPLETED:${EXT_SETTLE_KEY_CREATE}` },
     })
     expect(key).not.toBeNull()
+  })
+
+  it('settlement skips a QUEUED Payout whose Order.status is DISPUTED — payout remains QUEUED', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_DISPUTED,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.DISPUTED,
+        quantity: 1,
+      },
+    })
+    await testPrisma.payout.create({
+      data: {
+        id: TEST_PAYOUT_ID_DISPUTED,
+        labId: TEST_LAB_ID,
+        orderId: TEST_ORDER_ID_DISPUTED,
+        transactionId: TEST_TX_ID_1,
+        grossAmount: '1500.00',
+        platformFee: '150.00',
+        netAmount: '1350.00',
+        feePercentage: '0.1000',
+        status: PayoutStatus.QUEUED,
+      },
+    })
+    await testPrisma.labWallet.create({
+      data: { labId: TEST_LAB_ID, pendingBalance: '150.00', availableBalance: '0.00' },
+    })
+
+    const payload: XenditSettlementPayload = {
+      id: EXT_SETTLE_DISPUTED,
+      status: 'COMPLETED',
+      amount: 1500,
+      external_id: TEST_ORDER_ID_DISPUTED,
+    }
+
+    // processSettlement must return without settling — orphan-tolerance path triggers
+    // because both findFirst predicates (first-delivery and CAS write) exclude DISPUTED orders.
+    await expect(processSettlement(payload)).resolves.not.toThrow()
+
+    const payout = await testPrisma.payout.findUnique({ where: { id: TEST_PAYOUT_ID_DISPUTED } })
+    expect(payout!.status).toBe(PayoutStatus.QUEUED)
+    expect(payout!.externalPayoutId).toBeNull()
+
+    const wallet = await testPrisma.labWallet.findUnique({ where: { labId: TEST_LAB_ID } })
+    expect(wallet!.pendingBalance.toFixed(2)).toBe('150.00')
+    expect(wallet!.availableBalance.toFixed(2)).toBe('0.00')
+  })
+
+  it('settlement proceeds after DISPUTED->COMPLETED — payout hold is lifted automatically', async () => {
+    await testPrisma.order.create({
+      data: {
+        id: TEST_ORDER_ID_DISPUTED,
+        clientId: TEST_USER_CLIENT_ID,
+        labId: TEST_LAB_ID,
+        serviceId: TEST_SERVICE_ID,
+        status: OrderStatus.COMPLETED,
+        quantity: 1,
+      },
+    })
+    await testPrisma.payout.create({
+      data: {
+        id: TEST_PAYOUT_ID_DISPUTED,
+        labId: TEST_LAB_ID,
+        orderId: TEST_ORDER_ID_DISPUTED,
+        transactionId: TEST_TX_ID_1,
+        grossAmount: '1500.00',
+        platformFee: '150.00',
+        netAmount: '1350.00',
+        feePercentage: '0.1000',
+        status: PayoutStatus.QUEUED,
+      },
+    })
+    await testPrisma.labWallet.create({
+      data: { labId: TEST_LAB_ID, pendingBalance: '150.00', availableBalance: '0.00' },
+    })
+
+    const payload: XenditSettlementPayload = {
+      id: EXT_SETTLE_DISPUTED,
+      status: 'COMPLETED',
+      amount: 1500,
+      external_id: TEST_ORDER_ID_DISPUTED,
+    }
+
+    await processSettlement(payload)
+
+    const payout = await testPrisma.payout.findUnique({ where: { id: TEST_PAYOUT_ID_DISPUTED } })
+    expect(payout!.status).toBe(PayoutStatus.COMPLETED)
+    expect(payout!.externalPayoutId).toBe(EXT_SETTLE_DISPUTED)
+
+    const wallet = await testPrisma.labWallet.findUnique({ where: { labId: TEST_LAB_ID } })
+    expect(wallet!.pendingBalance.toFixed(2)).toBe('0.00')
+    expect(wallet!.availableBalance.toFixed(2)).toBe('150.00')
   })
 
   it('PROCESSING contract violation — rejects with Error matching /PROCESSING/', async () => {

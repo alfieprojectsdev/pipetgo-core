@@ -84,6 +84,19 @@ Same split as `webhooks/` slice:
 - `__tests__/handlers-rollback.test.ts` — full Prisma mock for rollback error propagation:
   walletUpdate failure, payoutUpdateMany failure, idempotencyKey.create atomicity.
 
+## Payout Hold
+
+`processSettlement` excludes payouts whose related `Order.status === DISPUTED` from both
+the first-delivery `findFirst` lookup and the `updateMany` CAS write. The hold lifts
+automatically when admin resolves the dispute: resolving to `COMPLETED` returns
+`Order.status` to `COMPLETED`; resolving to `REFUND_PENDING` advances it to
+`REFUND_PENDING`. In either case `Order.status` is no longer `DISPUTED` and the held
+`QUEUED` payout becomes eligible for settlement on the next webhook delivery.
+
+Any modification to the `findFirst` or `updateMany` predicates in `handlers.ts` must
+preserve the `order: { status: { not: OrderStatus.DISPUTED } }` relation filter on both
+clauses.
+
 ## Production Wiring
 
 Checkout currently issues regular Xendit invoices (not sub-account split invoices). This
