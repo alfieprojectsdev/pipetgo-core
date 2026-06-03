@@ -27,6 +27,7 @@ export default defineConfig({
       'src/features/orders/create-order/__tests__/**/*.test.ts',
       'src/features/orders/spec-upload/__tests__/**/*.test.ts',
       'src/features/orders/result-upload/__tests__/**/*.test.ts',
+      'src/features/admin/order-oversight/__tests__/**/*.test.ts',
     ],
   },
 })
