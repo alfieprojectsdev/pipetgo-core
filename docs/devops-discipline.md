@@ -48,6 +48,12 @@ exact `code-done → make-it-actually-run` boundary where the bottlenecks live.
 - [ ] **External services configured for THIS origin.** R2 CORS allows your origin; the OAuth
   redirect URI is registered for `http://localhost:PORT/api/auth/callback/<provider>`.
   *Skip-symptom:* uploads or sign-in fail only at runtime, with nothing wrong in the code.
+- [ ] **Tests run offline against a local DB, with the client + schema synced to THIS branch.**
+  Use `./scripts/test-local.sh` — it provisions the local Postgres container, regenerates the
+  Prisma client, and `db push`es the schema for the current checkout before vitest. Do NOT
+  rely on the cloud test DB (unreachable locally), and do NOT run a bare `npx vitest` in a
+  `wt/` worktree. *Skip-symptom:* `P1001` to a Neon host, or `column X does not exist` because
+  a sibling worktree's shared generated client emits SQL for another branch's schema.
 
 When a new lesson is captured below, add or sharpen the corresponding line here.
 
@@ -91,6 +97,35 @@ Newest at the bottom.
   existed until the founder's first OAuth sign-in (NextAuth creates the row on sign-in;
   pre-seeding a bare `User` breaks OAuth account-linking). Sequence: provision the identity →
   THEN grant/mutate. *(2026-05-31, T-13 admin bootstrap.)*
+- **Run the test suite against a local DB container, not the cloud test DB.** The cloud Neon
+  test DB is unreachable from local dev, so the whole suite (even pure unit tests) dies in
+  `global-setup`'s `prisma db push` with `P1001`. Fix: a local `postgres:16-alpine` container
+  on a non-default port (5433, since dev Postgres holds 5432) + `DATABASE_TEST_URL` pointing at
+  it; `scripts/test-local.sh` provisions and runs it. *(2026-06-04, T-19 local-test session.)*
+- **A `wt/` worktree shares ONE generated Prisma client and ONE test DB across branches —
+  re-sync both to the current checkout before testing.** Worktrees resolve `node_modules` up
+  to the main checkout, so whichever branch last ran `prisma generate` wins; a worktree on a
+  branch with a different `schema.prisma` then emits SQL for the wrong columns
+  (`column orders.completedAt does not exist`). The single test DB likewise carries whatever
+  schema was last pushed, and a branch switch can need a destructive `db push` (dropping an
+  enum value another branch added). Fix: `scripts/test-local.sh` runs `prisma generate` +
+  `db push --accept-data-loss` (fixtures are disposable) for the current checkout first.
+  *(2026-06-04, T-19: main-branch worktree inherited T-19's client + DISPUTED-enum DB.)*
+- **A module that `import 'server-only'` is untestable under vitest until the package is
+  aliased to a no-op.** `server-only` throws outside a React Server Component context; the
+  node-env test runner has none, so any importer (`src/lib/storage/r2.ts`) fails to load —
+  even its pure export tests. Fix: `resolve.alias['server-only']` → an empty stub in
+  `vitest.config.ts`. *(2026-06-04, T-19: 17 r2 tests failed on the bare `import 'server-only'`.)*
+- **Tell esbuild the JSX runtime explicitly for vitest, or component renders throw "React is
+  not defined".** `tsconfig.json` uses `jsx: "preserve"` (Next handles JSX); vitest's esbuild
+  then defaults to the classic runtime and emits `React.createElement` with no React in scope.
+  Fix: `esbuild: { jsx: 'automatic' }` in `vitest.config.ts`. *(2026-06-04, T-19: RSC-rendering
+  tests across browse/order-oversight failed before the suite could assert anything.)*
+- **`vi.mock` factories are hoisted above all top-level code — reference only `vi.hoisted()`
+  values, never bare consts.** A factory that reads a module-scope `const` (an id, a mock fn)
+  hits a TDZ `Cannot access X before initialization` and fails the whole file to load. Fix:
+  declare the value via `const x = vi.hoisted(() => …)`; set per-test data (e.g. the auth
+  session) in `beforeEach`. *(2026-06-04, T-19: lab-fulfillment + order-detail action tests.)*
 
 ---
 
@@ -108,4 +143,6 @@ merged code:
 **Trigger:** invoke by saying "run the DevOps Readiness Protocol", or whenever a
 provisioning/environment issue blocks a session after code is confidently merged.
 
-**Last run:** seeded 2026-05-31 (T-13 local-deploy session — 6 lessons).
+**Last run:** 2026-06-04 (T-19 local-test session — 5 lessons: local test DB container,
+worktree client/DB drift, `server-only` alias, vitest JSX runtime, `vi.mock` hoisting).
+Prior: seeded 2026-05-31 (T-13 local-deploy session — 6 lessons).
