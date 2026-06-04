@@ -1,17 +1,17 @@
 // Unit tests for openDispute server action.
 // Uses full Prisma mock (vi.fn()) scoped to the $transaction callback.
-// Cases: non-owner reject, out-of-window reject, null-completedAt (legacy) reject,
-// non-COMPLETED reject, happy path.
+// Cases: non-owner reject, already-disputed reject, out-of-window reject,
+// null-completedAt (legacy) reject, non-COMPLETED reject, CAS-miss reject, happy path.
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
 import { OrderStatus } from '@prisma/client'
 
 const mockOrderFindUnique = vi.fn()
-const mockOrderUpdate = vi.fn()
+const mockOrderUpdateMany = vi.fn()
 const mockOrderDisputeCreate = vi.fn()
 const mockTx = {
   order: {
     findUnique: mockOrderFindUnique,
-    update: mockOrderUpdate,
+    updateMany: mockOrderUpdateMany,
   },
   orderDispute: {
     create: mockOrderDisputeCreate,
@@ -86,12 +86,31 @@ describe('openDispute', () => {
       clientId: 'other-client-id',
       status: OrderStatus.COMPLETED,
       completedAt: COMPLETED_AT,
+      dispute: null,
     })
 
     const result = await openDispute(null, makeFormData(ORDER_ID, 'Test reason'))
 
     expect(result).toEqual({ message: 'Order not found.' })
-    expect(mockOrderUpdate).not.toHaveBeenCalled()
+    expect(mockOrderUpdateMany).not.toHaveBeenCalled()
+    expect(mockOrderDisputeCreate).not.toHaveBeenCalled()
+  })
+
+  it('returns already-opened message when a dispute already exists (one-per-order)', async () => {
+    mockAuth.mockResolvedValue(CLIENT_SESSION)
+    mockOrderFindUnique.mockResolvedValue({
+      id: ORDER_ID,
+      clientId: 'client-user-id',
+      status: OrderStatus.COMPLETED,
+      completedAt: COMPLETED_AT,
+      dispute: { id: 'existing-dispute-id', orderId: ORDER_ID },
+    })
+
+    const result = await openDispute(null, makeFormData(ORDER_ID, 'Test reason'))
+
+    expect(result).toEqual({ message: 'A dispute has already been opened for this order.' })
+    expect(mockIsWithinDisputeWindow).not.toHaveBeenCalled()
+    expect(mockOrderUpdateMany).not.toHaveBeenCalled()
     expect(mockOrderDisputeCreate).not.toHaveBeenCalled()
   })
 
@@ -102,6 +121,7 @@ describe('openDispute', () => {
       clientId: 'client-user-id',
       status: OrderStatus.COMPLETED,
       completedAt: null,
+      dispute: null,
     })
 
     const result = await openDispute(null, makeFormData(ORDER_ID, 'Test reason'))
@@ -110,7 +130,7 @@ describe('openDispute', () => {
       message: 'Order has no completion timestamp — dispute window cannot be determined.',
     })
     expect(mockIsWithinDisputeWindow).not.toHaveBeenCalled()
-    expect(mockOrderUpdate).not.toHaveBeenCalled()
+    expect(mockOrderUpdateMany).not.toHaveBeenCalled()
     expect(mockOrderDisputeCreate).not.toHaveBeenCalled()
   })
 
@@ -121,13 +141,14 @@ describe('openDispute', () => {
       clientId: 'client-user-id',
       status: OrderStatus.COMPLETED,
       completedAt: COMPLETED_AT,
+      dispute: null,
     })
     mockIsWithinDisputeWindow.mockReturnValue(false)
 
     const result = await openDispute(null, makeFormData(ORDER_ID, 'Test reason'))
 
     expect(result).toEqual({ message: 'The 14-day dispute window for this order has passed.' })
-    expect(mockOrderUpdate).not.toHaveBeenCalled()
+    expect(mockOrderUpdateMany).not.toHaveBeenCalled()
     expect(mockOrderDisputeCreate).not.toHaveBeenCalled()
   })
 
@@ -138,6 +159,7 @@ describe('openDispute', () => {
       clientId: 'client-user-id',
       status: OrderStatus.IN_PROGRESS,
       completedAt: COMPLETED_AT,
+      dispute: null,
     })
     mockIsWithinDisputeWindow.mockReturnValue(true)
     mockIsValidStatusTransition.mockReturnValue(false)
@@ -145,28 +167,48 @@ describe('openDispute', () => {
     const result = await openDispute(null, makeFormData(ORDER_ID, 'Test reason'))
 
     expect(result).toEqual({ message: 'Order cannot be disputed from its current status.' })
-    expect(mockOrderUpdate).not.toHaveBeenCalled()
+    expect(mockOrderUpdateMany).not.toHaveBeenCalled()
     expect(mockOrderDisputeCreate).not.toHaveBeenCalled()
   })
 
-  it('creates OrderDispute and updates order status to DISPUTED on happy path', async () => {
+  it('returns CAS-miss message and does not create a dispute when the transition affects 0 rows', async () => {
     mockAuth.mockResolvedValue(CLIENT_SESSION)
     mockOrderFindUnique.mockResolvedValue({
       id: ORDER_ID,
       clientId: 'client-user-id',
       status: OrderStatus.COMPLETED,
       completedAt: COMPLETED_AT,
+      dispute: null,
     })
     mockIsWithinDisputeWindow.mockReturnValue(true)
     mockIsValidStatusTransition.mockReturnValue(true)
-    mockOrderUpdate.mockResolvedValue({})
+    mockOrderUpdateMany.mockResolvedValue({ count: 0 })
+
+    const result = await openDispute(null, makeFormData(ORDER_ID, 'Test reason'))
+
+    expect(result).toEqual({ message: 'Order can no longer be disputed.' })
+    expect(mockOrderDisputeCreate).not.toHaveBeenCalled()
+  })
+
+  it('creates OrderDispute and CAS-transitions order to DISPUTED on happy path', async () => {
+    mockAuth.mockResolvedValue(CLIENT_SESSION)
+    mockOrderFindUnique.mockResolvedValue({
+      id: ORDER_ID,
+      clientId: 'client-user-id',
+      status: OrderStatus.COMPLETED,
+      completedAt: COMPLETED_AT,
+      dispute: null,
+    })
+    mockIsWithinDisputeWindow.mockReturnValue(true)
+    mockIsValidStatusTransition.mockReturnValue(true)
+    mockOrderUpdateMany.mockResolvedValue({ count: 1 })
     mockOrderDisputeCreate.mockResolvedValue({})
 
     const result = await openDispute(null, makeFormData(ORDER_ID, 'Test reason'))
 
     expect(result).toBeNull()
-    expect(mockOrderUpdate).toHaveBeenCalledWith({
-      where: { id: ORDER_ID },
+    expect(mockOrderUpdateMany).toHaveBeenCalledWith({
+      where: { id: ORDER_ID, status: OrderStatus.COMPLETED },
       data: { status: OrderStatus.DISPUTED },
     })
     expect(mockOrderDisputeCreate).toHaveBeenCalledWith({

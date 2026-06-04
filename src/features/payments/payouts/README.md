@@ -97,6 +97,20 @@ Any modification to the `findFirst` or `updateMany` predicates in `handlers.ts` 
 preserve the `order: { status: { not: OrderStatus.DISPUTED } }` relation filter on both
 clauses.
 
+### Known limitation — held settlements need a re-drive (settlement-activation prerequisite)
+
+A settlement webhook that arrives while the order is `DISPUTED` is ACKed `200` by `route.ts`
+and excluded by the predicates, so the provider does **not** retry it. "Eligible for
+settlement on the next webhook delivery" therefore assumes another delivery occurs — which
+it will not for a one-shot webhook. A payout held during the window can stay `QUEUED` after
+the dispute resolves unless settlement is re-driven.
+
+This is acceptable **only because the settlement path is dormant** (AD-001 / DL-012 — it
+activates when checkout migrates to sub-account split invoices). **Before activating
+settlement, add a resume step on `DISPUTED -> COMPLETED`**: either re-run `processSettlement`
+for the order at resolution time, or persist a retriable held-settlement state that a job
+drains. Without it, resolved-but-held payouts are stranded. (Raised by CodeRabbit on PR #21.)
+
 ## Production Wiring
 
 Checkout currently issues regular Xendit invoices (not sub-account split invoices). This

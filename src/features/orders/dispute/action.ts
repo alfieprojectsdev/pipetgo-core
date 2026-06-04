@@ -44,10 +44,18 @@ export async function openDispute(
     result = await prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
+        include: { dispute: true },
       })
 
       if (!order) return { message: 'Order not found.' }
       if (order.clientId !== session.user.id) return { message: 'Order not found.' }
+
+      // One dispute per order (OrderDispute.orderId is @unique). A resolved order
+      // returns to COMPLETED and keeps its OrderDispute row, so a repeat visit would
+      // otherwise hit the unique constraint on create() and throw. Guard explicitly.
+      if (order.dispute) {
+        return { message: 'A dispute has already been opened for this order.' }
+      }
 
       // completedAt null means the order predates the dispute-window feature; treat as out-of-window,
       // not a crash — callers of isWithinDisputeWindow must not receive null (ref: DL-010).
@@ -61,10 +69,17 @@ export async function openDispute(
         return { message: 'Order cannot be disputed from its current status.' }
       }
 
-      await tx.order.update({
-        where: { id: orderId },
+      // CAS: lock the transition on the status we validated so a concurrent write
+      // (another dispute submit, an admin action) is detected via count === 0 rather
+      // than silently clobbered — same webhook compare-and-set discipline as elsewhere.
+      const transition = await tx.order.updateMany({
+        where: { id: orderId, status: order.status },
         data: { status: OrderStatus.DISPUTED },
       })
+
+      if (transition.count === 0) {
+        return { message: 'Order can no longer be disputed.' }
+      }
 
       await tx.orderDispute.create({
         data: { orderId, reason },

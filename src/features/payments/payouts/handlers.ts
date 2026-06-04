@@ -65,6 +65,15 @@ export async function processSettlement(payload: XenditSettlementPayload): Promi
           // resolves to COMPLETED (status transitions back) or REFUND_PENDING.
           // Applied to BOTH the first-delivery lookup AND the CAS updateMany
           // predicate so disputed orders are excluded at both checkpoints (ref: DL-005, R-001).
+          //
+          // KNOWN LIMITATION (re-drive): a held settlement webhook is ACKed 200 by
+          // route.ts and not retried by the provider, so a payout that arrived during
+          // the dispute window stays QUEUED after resolution unless settlement is
+          // re-driven. This is acceptable today because the settlement path is DORMANT
+          // (DL-012, activated only when checkout migrates to sub-account invoices);
+          // whoever activates it MUST add a resume step on DISPUTED->COMPLETED (re-run
+          // processSettlement, or persist a retriable held-settlement state). Tracked as
+          // a settlement-activation prerequisite — see payouts/README.md.
           order: { status: { not: OrderStatus.DISPUTED } },
         },
       })

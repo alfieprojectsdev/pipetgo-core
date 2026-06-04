@@ -89,7 +89,11 @@ export default async function DisputeDetailPage({
     },
   })
 
-  if (!order) notFound()
+  // Status guard before the relation invariant (defense-in-depth): a stale or
+  // hand-entered URL for a resolved/never-disputed order is notFound(), not a
+  // referential-integrity throw. Only an order actually in DISPUTED reaches the
+  // invariant below, where a missing dispute IS a genuine integrity violation.
+  if (!order || order.status !== OrderStatus.DISPUTED) notFound()
   if (!order.dispute) throw new Error('Order.dispute missing after explicit include — referential integrity violation for DISPUTED order')
 
   const dto: DisputeDetailDTO = {
