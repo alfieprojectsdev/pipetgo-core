@@ -5,8 +5,15 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
 import { OrderStatus } from '@prisma/client'
 
-const mockOrderFindUnique = vi.fn()
-const mockOrderUpdate = vi.fn()
+// vi.mock factories are hoisted above all top-level declarations, so any value
+// they reference must come from vi.hoisted() (which runs first), not a bare const
+// — otherwise the factory hits a TDZ "Cannot access X before initialization".
+const { mockOrderFindUnique, mockOrderUpdate, mockRedirect } = vi.hoisted(() => ({
+  mockOrderFindUnique: vi.fn(),
+  mockOrderUpdate: vi.fn(),
+  mockRedirect: vi.fn(),
+}))
+
 const mockTx = {
   order: {
     findUnique: mockOrderFindUnique,
@@ -20,7 +27,6 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 
-const mockRedirect = vi.fn()
 vi.mock('next/navigation', () => ({
   redirect: mockRedirect,
 }))
