@@ -23,7 +23,9 @@ import type { ClientDashboardOrderDTO } from './page'
  * No shared Badge component exists in V2; inline span with Tailwind classes
  * is sufficient for this single consumer. (ref: DL-004)
  */
-const statusBadgeConfig: Record<OrderStatus, { label: string; className: string }> = {
+// `as const satisfies Record<OrderStatus>` ensures a missing enum member is
+// a compile-time error, not a silent runtime miss (ref: DL-008).
+const statusBadgeConfig = {
   [OrderStatus.QUOTE_REQUESTED]: { label: 'Quote Requested', className: 'bg-gray-100 text-gray-700' },
   [OrderStatus.QUOTE_PROVIDED]: { label: 'Quote Provided', className: 'bg-yellow-100 text-yellow-800' },
   [OrderStatus.QUOTE_REJECTED]: { label: 'Quote Rejected', className: 'bg-red-100 text-red-800' },
@@ -33,10 +35,11 @@ const statusBadgeConfig: Record<OrderStatus, { label: string; className: string 
   [OrderStatus.ACKNOWLEDGED]: { label: 'Acknowledged', className: 'bg-blue-100 text-blue-800' },
   [OrderStatus.IN_PROGRESS]: { label: 'In Progress', className: 'bg-blue-100 text-blue-800' },
   [OrderStatus.COMPLETED]: { label: 'Completed', className: 'bg-green-100 text-green-800' },
+  [OrderStatus.DISPUTED]: { label: 'Disputed', className: 'bg-amber-100 text-amber-800' },
   [OrderStatus.CANCELLED]: { label: 'Cancelled', className: 'bg-red-100 text-red-800' },
   [OrderStatus.REFUND_PENDING]: { label: 'Refund Pending', className: 'bg-yellow-100 text-yellow-800' },
   [OrderStatus.REFUNDED]: { label: 'Refunded', className: 'bg-gray-100 text-gray-700' },
-}
+} as const satisfies Record<OrderStatus, { label: string; className: string }>
 
 type ClientDashboardUIProps = {
   orders: ClientDashboardOrderDTO[]

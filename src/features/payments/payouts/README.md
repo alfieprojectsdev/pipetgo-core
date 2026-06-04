@@ -84,6 +84,33 @@ Same split as `webhooks/` slice:
 - `__tests__/handlers-rollback.test.ts` — full Prisma mock for rollback error propagation:
   walletUpdate failure, payoutUpdateMany failure, idempotencyKey.create atomicity.
 
+## Payout Hold
+
+`processSettlement` excludes payouts whose related `Order.status === DISPUTED` from both
+the first-delivery `findFirst` lookup and the `updateMany` CAS write. The hold lifts
+automatically when admin resolves the dispute: resolving to `COMPLETED` returns
+`Order.status` to `COMPLETED`; resolving to `REFUND_PENDING` advances it to
+`REFUND_PENDING`. In either case `Order.status` is no longer `DISPUTED` and the held
+`QUEUED` payout becomes eligible for settlement on the next webhook delivery.
+
+Any modification to the `findFirst` or `updateMany` predicates in `handlers.ts` must
+preserve the `order: { status: { not: OrderStatus.DISPUTED } }` relation filter on both
+clauses.
+
+### Known limitation — held settlements need a re-drive (settlement-activation prerequisite)
+
+A settlement webhook that arrives while the order is `DISPUTED` is ACKed `200` by `route.ts`
+and excluded by the predicates, so the provider does **not** retry it. "Eligible for
+settlement on the next webhook delivery" therefore assumes another delivery occurs — which
+it will not for a one-shot webhook. A payout held during the window can stay `QUEUED` after
+the dispute resolves unless settlement is re-driven.
+
+This is acceptable **only because the settlement path is dormant** (AD-001 / DL-012 — it
+activates when checkout migrates to sub-account split invoices). **Before activating
+settlement, add a resume step on `DISPUTED -> COMPLETED`**: either re-run `processSettlement`
+for the order at resolution time, or persist a retriable held-settlement state that a job
+drains. Without it, resolved-but-held payouts are stranded. (Raised by CodeRabbit on PR #21.)
+
 ## Production Wiring
 
 Checkout currently issues regular Xendit invoices (not sub-account split invoices). This

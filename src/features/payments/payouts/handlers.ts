@@ -4,7 +4,7 @@
  * processSettlement runs all DB writes inside a single Prisma $transaction.
  * Any throw at any step rolls back all writes; Xendit retries on 500.
  */
-import { PayoutStatus } from '@prisma/client'
+import { PayoutStatus, OrderStatus } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import type { XenditSettlementPayload } from './types'
 
@@ -61,6 +61,20 @@ export async function processSettlement(payload: XenditSettlementPayload): Promi
           orderId: payload.external_id,
           status: PayoutStatus.QUEUED,
           externalPayoutId: null,
+          // Exclude payouts on DISPUTED orders — the hold is lifted when admin
+          // resolves to COMPLETED (status transitions back) or REFUND_PENDING.
+          // Applied to BOTH the first-delivery lookup AND the CAS updateMany
+          // predicate so disputed orders are excluded at both checkpoints (ref: DL-005, R-001).
+          //
+          // KNOWN LIMITATION (re-drive): a held settlement webhook is ACKed 200 by
+          // route.ts and not retried by the provider, so a payout that arrived during
+          // the dispute window stays QUEUED after resolution unless settlement is
+          // re-driven. This is acceptable today because the settlement path is DORMANT
+          // (DL-012, activated only when checkout migrates to sub-account invoices);
+          // whoever activates it MUST add a resume step on DISPUTED->COMPLETED (re-run
+          // processSettlement, or persist a retriable held-settlement state). Tracked as
+          // a settlement-activation prerequisite — see payouts/README.md.
+          order: { status: { not: OrderStatus.DISPUTED } },
         },
       })
 
@@ -102,7 +116,9 @@ export async function processSettlement(payload: XenditSettlementPayload): Promi
     // finds externalPayoutId already written (count=0) and returns early. Xendit retries
     // the loser, which then finds the COMPLETED Payout in Step 1 and returns early.
     const updateResult = await tx.payout.updateMany({
-      where: { id: payout.id, externalPayoutId: null },
+      // CAS predicate: order.status checked here as well as in findFirst to
+      // prevent a race where status changes between lookup and write (ref: DL-005).
+      where: { id: payout.id, externalPayoutId: null, order: { status: { not: OrderStatus.DISPUTED } } },
       data: {
         status: PayoutStatus.COMPLETED,
         externalPayoutId: payload.id,

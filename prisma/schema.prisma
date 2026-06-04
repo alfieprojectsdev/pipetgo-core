@@ -38,9 +38,19 @@ enum OrderStatus {
   ACKNOWLEDGED
   IN_PROGRESS
   COMPLETED
+  /// Client-opened dispute on a COMPLETED order; payout is held until admin
+  /// resolves to COMPLETED (no refund) or REFUND_PENDING (ref: DL-004, DL-005).
+  DISPUTED
   CANCELLED
   REFUND_PENDING
   REFUNDED
+}
+
+/// Admin verdict on a dispute. RESOLVED_COMPLETED lifts the payout hold;
+/// RESOLVED_REFUND moves the order to REFUND_PENDING for manual processing (ref: DL-007).
+enum DisputeResolution {
+  RESOLVED_COMPLETED
+  RESOLVED_REFUND
 }
 
 enum TransactionStatus {
@@ -111,6 +121,8 @@ model User {
   // Named relation back-reference for kycReviewedById on Lab. (ref: DL-005)
   kycReviewedLabs            Lab[] @relation("LabKycReviewer")
   accreditationReviewedLabs  Lab[] @relation("LabAccreditationReviewer")
+  /// Named relation avoids collision with Order.clientId (ref: DL-003).
+  resolvedDisputes           OrderDispute[] @relation("DisputeResolver")
 
   @@map("users")
 }
@@ -214,6 +226,10 @@ model Order {
   paidAt          DateTime?
   paymentMethod   String?
   refundedAt      DateTime?
+  /// Immutable completion timestamp written once at IN_PROGRESS->COMPLETED.
+  /// Anchors the DISPUTE_WINDOW_DAYS check; must not use updatedAt
+  /// because updatedAt mutates on every subsequent write (ref: DL-001).
+  completedAt     DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -224,6 +240,7 @@ model Order {
   attachments   Attachment[]
   transactions  Transaction[]
   payouts       Payout[]
+  dispute       OrderDispute?
 
   @@index([clientId])
   @@index([labId])
@@ -254,6 +271,30 @@ model ClientProfile {
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("client_profiles")
+}
+
+/// One-to-one audit record per disputed order. orderId @unique enforces
+/// one-dispute-per-order at the DB level. Captures resolver identity,
+/// direction, timestamps, and admin note for ITA 2023 redress audit trail
+/// (ref: DL-003). Applied per-env via npx prisma db push (ref: DL-009).
+model OrderDispute {
+  id           String             @id @default(cuid())
+  orderId      String             @unique
+  reason       String
+  resolution   DisputeResolution?
+  /// Null while the dispute is open; set atomically with Order.status write in resolveDispute.
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolutionNote String?
+  openedAt     DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  order      Order @relation(fields: [orderId], references: [id])
+  /// Named relation avoids collision with Order.clientId (ref: DL-003).
+  resolvedBy User? @relation("DisputeResolver", fields: [resolvedById], references: [id])
+
+  @@index([orderId])
+  @@map("order_disputes")
 }
 
 model Attachment {

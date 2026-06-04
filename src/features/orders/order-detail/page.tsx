@@ -13,7 +13,8 @@ type AttachmentDTO = { id: string; fileName: string; createdAt: string }
 // Typed Record<OrderStatus, ...> so a missing enum value is a compile error at build time.
 // The ?? on the badge lookup (below) is intentional deploy-safety: guards against the window
 // where a DB migration adds a new enum value before the Prisma client is regenerated.
-const statusBadgeConfig: Record<OrderStatus, { label: string; className: string }> = {
+// Exported for exhaustiveness unit test (src/features/orders/order-detail/__tests__/status-badge.test.ts).
+export const statusBadgeConfig: Record<OrderStatus, { label: string; className: string }> = {
   [OrderStatus.QUOTE_REQUESTED]: { label: 'Quote Requested', className: 'bg-gray-100 text-gray-700' },
   [OrderStatus.QUOTE_PROVIDED]:  { label: 'Quote Provided',  className: 'bg-yellow-100 text-yellow-800' },
   [OrderStatus.QUOTE_REJECTED]:  { label: 'Quote Rejected',  className: 'bg-red-100 text-red-800' },
@@ -23,6 +24,8 @@ const statusBadgeConfig: Record<OrderStatus, { label: string; className: string 
   [OrderStatus.ACKNOWLEDGED]:    { label: 'Acknowledged',    className: 'bg-blue-100 text-blue-800' },
   [OrderStatus.IN_PROGRESS]:     { label: 'In Progress',     className: 'bg-blue-100 text-blue-800' },
   [OrderStatus.COMPLETED]:       { label: 'Completed',       className: 'bg-green-100 text-green-800' },
+  // amber-100: distinct from COMPLETED (green) and REFUND_PENDING (yellow).
+  [OrderStatus.DISPUTED]:        { label: 'Disputed',        className: 'bg-amber-100 text-amber-800' },
   [OrderStatus.CANCELLED]:       { label: 'Cancelled',       className: 'bg-red-100 text-red-800' },
   [OrderStatus.REFUND_PENDING]:  { label: 'Refund Pending',  className: 'bg-yellow-100 text-yellow-800' },
   [OrderStatus.REFUNDED]:        { label: 'Refunded',        className: 'bg-gray-100 text-gray-700' },

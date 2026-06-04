@@ -31,7 +31,10 @@ export const validStatusTransitions: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PAYMENT_FAILED]: [OrderStatus.PAYMENT_PENDING, OrderStatus.CANCELLED],
   [OrderStatus.ACKNOWLEDGED]: [OrderStatus.IN_PROGRESS, OrderStatus.CANCELLED],
   [OrderStatus.IN_PROGRESS]: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
-  [OrderStatus.COMPLETED]: [OrderStatus.REFUND_PENDING],
+  // COMPLETED permits DISPUTED: a client may open a dispute within the window (ref: DL-004).
+  [OrderStatus.COMPLETED]: [OrderStatus.REFUND_PENDING, OrderStatus.DISPUTED],
+  // DISPUTED has no CANCELLED edge — cancellation after dispute is out of scope for T-19.
+  [OrderStatus.DISPUTED]: [OrderStatus.COMPLETED, OrderStatus.REFUND_PENDING],
   [OrderStatus.REFUND_PENDING]: [OrderStatus.REFUNDED],
   [OrderStatus.REFUNDED]: [],
   [OrderStatus.CANCELLED]: [],
