@@ -30,7 +30,7 @@ PipetGo V2 has a working, end-to-end lab testing marketplace. A client can disco
 **What's next (engineering — no longer blocks lab approval):**
 - **T-13b Admin order oversight (read-only)** — ✅ **done (PR #20, merged `9db480a`).** ADMIN-gated read-only views of all orders + transactions + payouts across the platform (no mutations). Reuses the `/dashboard/admin/*` layout guard and the two-layer admin auth pattern from T-13. Cursor pagination + on-demand attachment download. No schema change → no `db push` owed.
 - **T-13c admin role management** — deferred until its own privilege-escalation audit (grant/revoke `UserRole` is the dangerous surface T-13b deliberately excludes).
-- **T-19 Dispute and redress mechanism** — **plan written + QR-verified, ready to implement.** ITA 2023 internal redress; `DISPUTED` order status + `OrderDispute` model (14-day window, admin resolution either direction, payout held while DISPUTED). Schema migration → `npx prisma db push` owed per env. `[planner]` — `/clear` then run the executor next. Plan: `plans/T-19-dispute-redress.md`; playbook: `docs/sessions/2026-06-03_T-19-playbook.md`; session: `docs/sessions/2026-06-03-T19-planning-done.md`.
+- **T-19 Dispute and redress mechanism** — ✅ **done (PR #21, merged `356c3a8`).** ITA 2023 internal redress; `DISPUTED` order status + `OrderDispute` model (14-day window, admin resolution either direction, payout held while DISPUTED). **`npx prisma db push` owed per env (dev/CI/prod)** for the `DISPUTED` enum value + `order_disputes` table before runtime (DL-009 — unpushed = runtime crash, not a type error). Refund execution for `RESOLVED_REFUND` stays manual/out of scope (DL-007) — order moves to `REFUND_PENDING` only. Plan: `plans/T-19-dispute-redress.md`.
 
 > Per-environment after pulling T-18: `npx prisma db push` to apply `Lab.accreditationReviewedById`, `accreditationReviewedAt`, `accreditationRejectionReason` — else the verify/reject flow crashes at runtime on the audit fields (not a type error).
 > Per-environment after pulling T-12: `npx prisma db push` to apply `Attachment.r2Key` (adds the column and `@unique` index; makes `fileUrl` nullable — does NOT drop it) — else the spec/result upload actions crash at runtime on the missing column. **Dev `neondb` applied 2026-06-02; CI/prod still owe it.**
@@ -361,8 +361,8 @@ T-17 PESONet virtual account integration  [done — PR #14] [planner]
 ── Phase 3 regulatory ──────────────────────────────────────────────────────
 T-18 Lab accreditation verification       [done — PR #18] [planner]
     (ISO 17025 / ITA solidary liability; db push of audit columns still owed per env)
-T-19 Dispute and redress mechanism        [plan written, ready to implement; T-06 ✅ T-07 ✅] [planner]
-    (ITA 2023 internal redress requirement; DISPUTED status schema migration is in-scope)
+T-19 Dispute and redress mechanism        [done — PR #21; db push owed per env] [planner]
+    (ITA 2023 internal redress requirement; DISPUTED status + order_disputes table — db push owed)
 T-20 RA 10173 privacy compliance          [done — PR #15] [planner]
 ```
 
@@ -423,7 +423,7 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 
 ### Phase 4 — Post-MVP / compliance (target: 2026-06-08 → 2026-07-06)
 
-6/6 done (T-17 pulled into Phase 3, T-20 merged, T-15 done, T-13 KYC-review done, T-18 merged, T-12 merged PR #19). Spun-out follow-ons: T-13b ✅ done (PR #20), T-13c deferred (privilege-escalation audit), **T-19 plan written + QR-verified, ready to implement**.
+6/6 done (T-17 pulled into Phase 3, T-20 merged, T-15 done, T-13 KYC-review done, T-18 merged, T-12 merged PR #19). Spun-out follow-ons: T-13b ✅ done (PR #20), T-13c deferred (privilege-escalation audit), **T-19 ✅ done (PR #21, merged `356c3a8`) — `npx prisma db push` owed per env for `DISPUTED` + `order_disputes`**.
 
 | Ticket | Blocker clears | Sessions | Notes |
 |--------|----------------|----------|-------|
@@ -435,7 +435,7 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | T-12 Attachment uploads | T-06 ✅ + R2 ✅ | 3 | ✅ done (PR #19, merged `9fd5422`) — SPECIFICATION upload (client, 20 MB) + RESULT upload (lab, 50 MB, PDF-only); presigned PUT/GET; `Attachment.r2Key @unique`; `fileUrl` made nullable (not dropped). `npx prisma db push` — dev done 2026-06-02, CI/prod owed. **50 MB RESULT upload verification: test with a ≥10 MB PDF in the lab-fulfillment page with IN_PROGRESS order before go-live.** **RA 10173 retention flag: uploaded SPECIFICATION and RESULT documents contain PII (client names, test results) — retention period and deletion process must be defined and documented before first commercial transaction.** |
 | T-13b Admin order oversight (read-only) | T-13 ✅ | 1 | ✅ done (PR #20, merged `9db480a`) — read-only admin view of all orders/transactions/payouts; cursor pagination + on-demand presigned attachment download; two-layer ADMIN auth; no `UserRole` writes; no schema change. |
 | T-13c Admin role management | T-13 ✅ | 2 | **Deferred — privilege-escalation surface.** `UserRole` grant/revoke; needs last-admin + self-demotion invariants, an audit log, and a dedicated security review. Manual-SQL bootstrap (DL-008) stays the only ADMIN-minting path until then. |
-| T-19 Dispute and redress | T-06 ✅ + T-07 ✅ | 2 | ITA 2023 internal redress; schema migration needed (DISPUTED status) |
+| T-19 Dispute and redress | T-06 ✅ + T-07 ✅ | 2 | ✅ done (PR #21, merged `356c3a8`) — `DISPUTED` status + `OrderDispute` model, 14-day window, admin resolution either direction, payout held while DISPUTED. **`npx prisma db push` owed per env** (`DISPUTED` enum + `order_disputes`). Refund execution stays manual (DL-007). |
 
 **End state:** Full roadmap complete, including regulatory compliance layer.
 
@@ -448,7 +448,7 @@ All 4/4 tickets done (T-17 pulled forward from Phase 4 as it unblocked on T-14).
 | 3 — Financial | ✅ **COMPLETE** | 4/4 | ✅ **MVP gate cleared** |
 | 4 — Post-MVP | 6/6 done | 100% | |
 
-**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs); T-18 accreditation (ISO 17025) merged (PR #18 — `Lab.isVerified` marketplace gate); T-12 (attachments) merged (PR #19 — SPECIFICATION + RESULT upload flows). The remaining T-13 scope is split into **T-13b (read-only order oversight — ✅ done, PR #20)** and T-13c (role management, deferred — privilege-escalation audit). **T-19 (dispute/redress) plan is written + QR-verified; ready to implement (executor next).**
+**Phases 1–3 are complete.** T-13 KYC-review surface merged (closes the approve path for labs); T-18 accreditation (ISO 17025) merged (PR #18 — `Lab.isVerified` marketplace gate); T-12 (attachments) merged (PR #19 — SPECIFICATION + RESULT upload flows). The remaining T-13 scope is split into **T-13b (read-only order oversight — ✅ done, PR #20)** and T-13c (role management, deferred — privilege-escalation audit). **T-19 (dispute/redress) ✅ done (PR #21) — `npx prisma db push` owed per env before runtime; refund execution for `RESOLVED_REFUND` stays manual (DL-007).**
 
 ---
 
@@ -866,7 +866,7 @@ by default; only ADMIN can set it to `true` after reviewing submitted documents.
 
 ### T-19 — Dispute and redress mechanism `[planner]`
 **Branch:** `feat/T19-dispute-redress`
-**Status:** plan written + QR-verified, ready to implement (T-06 ✅, T-07 ✅); `DISPUTED` schema migration is in-scope, not a blocker. Plan: `plans/T-19-dispute-redress.md` · Playbook: `docs/sessions/2026-06-03_T-19-playbook.md` · Session: `docs/sessions/2026-06-03-T19-planning-done.md`
+**Status:** ✅ done (PR #21, merged `356c3a8`). Shipped: `DISPUTED` `OrderStatus` + `OrderDispute` model, `Order.completedAt` write-once anchor, `DISPUTE_WINDOW_DAYS=14`, 3 state-machine edges, client `dispute/` slice, admin `dispute-resolution/` slice, payout-hold in `processSettlement`, badge maps + exhaustiveness test. **`npx prisma db push` owed per env (dev/CI/prod)** for the `DISPUTED` enum value + `order_disputes` table before runtime (DL-009). **Follow-on:** refund execution for `RESOLVED_REFUND` is manual/out of scope (DL-007); and the dormant settlement path needs a resume-on-`DISPUTED→COMPLETED` re-drive before it goes live (see `src/features/payments/payouts/README.md`). Plan: `plans/T-19-dispute-redress.md`
 **Why planner:** The Internet Transactions Act (ITA) of 2023 requires an internal redress mechanism. This ticket adds a `DISPUTED` order status (schema migration), the state machine transitions into and out of it, a dispute initiation slice for the client, an admin resolution slice, and the fund-holding logic that prevents lab payout release while a dispute is open. Multiple actors, multiple transitions, financial hold semantics.
 
 **Schema migration required:** add `DISPUTED` to `OrderStatus` enum.
