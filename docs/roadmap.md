@@ -184,11 +184,11 @@ Checklist of everything that must be provisioned outside the codebase for the pl
 The vitest suite (unit + real-DB integration) runs fully offline against a local Postgres
 container — no Neon dev branch reachable from the dev machine is required.
 
-- [x] **Local test DB via `scripts/test-local.sh`** (added 2026-06-04) — provisions a
+- [x] **Local test DB via `scripts/test-local.sh`** — provisions a
   `postgres:16-alpine` container (`pipetgo-test-db`, host port **5433**, since dev Postgres
   typically holds 5432), points `DATABASE_TEST_URL` at it, regenerates the Prisma client and
   `db push`es the schema for the current checkout, then runs vitest. One command; idempotent.
-- [x] **vitest config hardened for offline/RSC tests** (added 2026-06-04) — `esbuild.jsx:
+- [x] **vitest config hardened for offline/RSC tests** — `esbuild.jsx:
   'automatic'` (fixes "React is not defined" in component renders) and a `server-only` alias
   to a no-op stub (makes `src/lib/storage/r2.ts` and its importers loadable under node).
 - [x] **`wt/` worktree test reliability** — `scripts/test-local.sh` re-syncs the shared

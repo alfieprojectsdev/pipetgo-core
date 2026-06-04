@@ -28,15 +28,25 @@ cd "$ROOT"
 
 c() { printf '\033[1;36m== %s\033[0m\n' "$*"; }
 
-# 1. .env.test must point DATABASE_TEST_URL at the local container.
+# 1. Force DATABASE_TEST_URL to the local container EVERY run. The script later runs
+#    `db push --accept-data-loss`, so it must never trust a pre-existing value: a stale
+#    .env.test (e.g. an old cloud Neon URL) would otherwise be destructively synced, and
+#    a PGPORT override would be ignored after the first run. Always (re)write the line.
+TEST_URL="postgresql://postgres:$PGPASSWORD_LOCAL@localhost:$PGPORT/$PGDB"
 if [ ! -e .env.test ]; then
   c "creating .env.test (local Postgres)"
-  cat > .env.test <<EOF
-# Local test Postgres (docker container \`$CONTAINER\`, $IMAGE on host port $PGPORT).
-DATABASE_TEST_URL=postgresql://postgres:$PGPASSWORD_LOCAL@localhost:$PGPORT/$PGDB
-EOF
+  printf '# Local test Postgres (docker container `%s`, %s on host port %s).\nDATABASE_TEST_URL=%s\n' \
+    "$CONTAINER" "$IMAGE" "$PGPORT" "$TEST_URL" > .env.test
+elif ! grep -qxF "DATABASE_TEST_URL=$TEST_URL" .env.test; then
+  c "rewriting .env.test DATABASE_TEST_URL -> local container (was not the local URL)"
+  tmp_env="$(mktemp)"
+  awk -v url="$TEST_URL" '
+    /^DATABASE_TEST_URL=/ { print "DATABASE_TEST_URL=" url; seen=1; next }
+    { print }
+    END { if (!seen) print "DATABASE_TEST_URL=" url }
+  ' .env.test > "$tmp_env"
+  mv "$tmp_env" .env.test
 fi
-TEST_URL="$(grep -E '^DATABASE_TEST_URL=' .env.test | head -1 | cut -d= -f2-)"
 
 # 2. Ensure the container exists and is running.
 if ! docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER"; then
