@@ -60,10 +60,18 @@ elif ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
 fi
 
 c "waiting for Postgres"
+ready=0
 for _ in $(seq 1 30); do
-  docker exec "$CONTAINER" pg_isready -U postgres -d "$PGDB" >/dev/null 2>&1 && break
+  if docker exec "$CONTAINER" pg_isready -U postgres -d "$PGDB" >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
   sleep 1
 done
+if [ "$ready" -ne 1 ]; then
+  echo "Postgres in container $CONTAINER did not become ready within 30s" >&2
+  exit 1
+fi
 
 # 3. Sync the generated Prisma client to THIS worktree's schema.
 c "prisma generate (this worktree's schema)"
