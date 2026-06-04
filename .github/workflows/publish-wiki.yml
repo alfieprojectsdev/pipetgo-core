@@ -1,0 +1,64 @@
+name: Publish docs to wiki
+
+# One-way mirror: curated in-repo docs -> GitHub wiki, on every push to main.
+# The repo stays the source of truth; generated wiki pages are overwritten each run.
+#
+# PREREQUISITE (one-time): the wiki repo must already exist. Create any page once via
+# the GitHub UI (repo -> Wiki -> Create the first page), then this workflow can push.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - docs/roadmap.md
+      - docs/architecture/**
+      - docs/devops-discipline.md
+      - scripts/build-wiki.mjs
+      - .github/workflows/publish-wiki.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-wiki
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Build wiki pages
+        run: node scripts/build-wiki.mjs wiki-out
+
+      - name: Sync generated pages to the wiki
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          if ! git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.wiki.git" "$tmp"; then
+            echo "::error::Wiki repo not found. Create the first wiki page once in the GitHub UI, then re-run."
+            exit 1
+          fi
+
+          # Copy only the pages we generate (additive; never touches pages we don't own).
+          cp wiki-out/*.md "$tmp"/
+
+          cd "$tmp"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No wiki changes."
+            exit 0
+          fi
+          git add -A
+          git commit -m "docs(wiki): sync from ${SHA}"
+          git push
